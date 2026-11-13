@@ -3,6 +3,7 @@ use Cake\ORM\TableRegistry;
 $this->Crstudentevents = TableRegistry::getTableLocator()->get('Crstudentevents');
 ?>
 <div class="admin_loader" id="loaderID"><?php echo $this->Html->image('loader_large_blue.gif');?></div>
+<?= $this->element('combined_teams') ?>
 <?php if (!$combinerequests->isEmpty()) { ?> 
     <div class="panel-body">
         
@@ -25,10 +26,10 @@ $this->Crstudentevents = TableRegistry::getTableLocator()->get('Crstudentevents'
 					<tbody>
 						<?php foreach ($combinerequests as $datarecord) { ?>
 						<tr>
-						<td data-title="Event Number"><?php echo $datarecord->event_id_number;?></td>
-						<td data-title="Event Name"><?php echo $datarecord->Events['event_name'];?></td>
-						<td data-title="Combined with"><?php echo $datarecord->Combineduser['first_name'];?></td>
-						<td data-title="Student Name"><?php echo $datarecord->student_name;?></td>
+						<td data-title="Event Number"><?php echo h($datarecord->event_id_number);?></td>
+						<td data-title="Event Name"><?php echo h($datarecord->Events->event_name ?? 'Event not found');?></td>
+						<td data-title="Combined with"><?php echo h($datarecord->Combineduser->first_name ?? 'School not found');?></td>
+						<td data-title="Student Name"><?php echo h($datarecord->student_name);?></td>
 						<td data-title="Request Date">
 <?php
 $requestDateDisplay = 'N/A';
@@ -70,6 +71,26 @@ echo $requestDateDisplay;
 					</tbody>
 				</table>
             </div>
+            <?php $paging = $combinerequests->pagingParams(); ?>
+            <?php if ($paging['pageCount'] > 1) { ?>
+                <nav aria-label="Combined request pages" class="supervisor-pagination">
+                    <?php if ($combinerequests->hasPrevPage()) {
+                        $params = $this->request->getQueryParams();
+                        $params['page'] = $paging['currentPage'] - 1;
+                        $url = ['controller' => 'Combinerequests', 'action' => 'viewlist', '?' => $params];
+                        if (!empty($keyword)) { $url[] = 'keyword:' . $keyword; }
+                        echo $this->Html->link('Previous', $url, ['class' => 'btn btn-outline-primary']);
+                    } ?>
+                    <span>Page <?= (int)$paging['currentPage'] ?> of <?= (int)$paging['pageCount'] ?></span>
+                    <?php if ($combinerequests->hasNextPage()) {
+                        $params = $this->request->getQueryParams();
+                        $params['page'] = $paging['currentPage'] + 1;
+                        $url = ['controller' => 'Combinerequests', 'action' => 'viewlist', '?' => $params];
+                        if (!empty($keyword)) { $url[] = 'keyword:' . $keyword; }
+                        echo $this->Html->link('Next', $url, ['class' => 'btn btn-outline-primary']);
+                    } ?>
+                </nav>
+            <?php } ?>
         </section>
 
          
@@ -89,7 +110,7 @@ $('#group_events_table').dataTable({
     //"bPaginate": false,
     "bLengthChange": false,
 	"pageLength": 50,
-	order: [[6, 'desc']],
+	order: [[4, 'desc']],
     //"bFilter": true,
     //"bInfo": false,
     //"bAutoWidth": false
@@ -123,8 +144,6 @@ $('#group_events_table').dataTable({
         border-radius: 0rem !important;
     }
 </style>
-
-
 
 
 

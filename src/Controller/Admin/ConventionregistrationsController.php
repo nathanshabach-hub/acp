@@ -7,6 +7,7 @@ use Cake\Core\Configure;
 use Cake\Core\Configure\Engine\PhpConfig;
 use App\Utility\LegacyEmail as Email;
 use Cake\Datasource\ConnectionManager;
+use App\Service\SupervisorAssignmentPolicy;
 
 #[\AllowDynamicProperties]
 class ConventionregistrationsController extends AppController {
@@ -164,10 +165,16 @@ class ConventionregistrationsController extends AppController {
 		global $priceStructureCR;
 		$this->set('priceStructureCR', $priceStructureCR);
 		
-		$conventionsDD = $this->Conventions->find()->where([])->order(['Conventions.name' => 'ASC'])->combine('id', 'name')->toArray();
+		$conventionsDD = $this->Conventions
+			->find('list', ['keyField' => 'id', 'valueField' => 'name'])
+			->order(['Conventions.name' => 'ASC'])
+			->toArray();
 		$this->set('conventionsDD', $conventionsDD);
 		
-		$seasonsDD = $this->Seasons->find()->where([])->order(['Seasons.season_year' => 'DESC'])->combine('season_year', 'season_year')->toArray();
+		$seasonsDD = $this->Seasons
+			->find('list', ['keyField' => 'season_year', 'valueField' => 'season_year'])
+			->order(['Seasons.season_year' => 'DESC'])
+			->toArray();
 		$this->set('seasonsDD', $seasonsDD);
 
         if ($this->request->is('post')) {
@@ -464,11 +471,32 @@ class ConventionregistrationsController extends AppController {
 				: $this->redirect($this->referer(['action' => 'index']));
 		}
 
-		$studentRecord->teacher_parent_id = $newTeacherParentId;
-		if ($this->Conventionregistrationstudents->save($studentRecord)) {
+		if ((int)$studentRecord->status !== 1) {
+			$this->Flash->error('Only active student registrations can be reassigned.');
+			return ($returnSlug !== '') ? $this->redirect(['action' => 'teachers', $returnSlug]) : $this->redirect($this->referer(['action' => 'index']));
+		}
+		$connection = $this->Conventionregistrationstudents->getConnection();
+		try {
+			$connection->transactional(function () use ($connection, $studentRegistrationId, $newTeacherParentId) {
+				$row = $connection->execute('SELECT * FROM conventionregistrationstudents WHERE id = ? AND status = 1 FOR UPDATE', [$studentRegistrationId])->fetch('assoc');
+				if (!$row) {
+					throw new \DomainException('The active student registration could not be found.');
+				}
+				if ((new \App\Service\CrossSchoolSponsorship($connection))->hasPending([(int)$row['id']])) {
+					throw new \DomainException('The school must cancel the pending cross-school request before this student can be reassigned.');
+				}
+				$policy = new SupervisorAssignmentPolicy($connection);
+				$excluded = (int)$row['teacher_parent_id'] === $newTeacherParentId ? [(int)$row['id']] : [];
+				$policy->assign($newTeacherParentId, (int)$row['convention_id'], (int)$row['season_id'], (int)$row['season_year'],
+					[(int)$row['student_id']], $excluded, function () use ($row, $newTeacherParentId) {
+						$record = $this->Conventionregistrationstudents->get($row['id']);
+						$record->teacher_parent_id = $newTeacherParentId;
+						$this->Conventionregistrationstudents->saveOrFail($record);
+					});
+			});
 			$this->Flash->success('Student was reassigned successfully.');
-		} else {
-			$this->Flash->error('Unable to reassign student. Please try again.');
+		} catch (\DomainException $error) {
+			$this->Flash->error($error->getMessage());
 		}
 
 		return ($returnSlug !== '')
@@ -504,14 +532,29 @@ class ConventionregistrationsController extends AppController {
                 $action = $this->request->getData()['action'];
                 if ($idList) {
                     if ($action == "Activate") {
-                        $this->Conventionregistrationstudents->updateAll(['status' => '1'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are activated successfully.');
+						try {
+							$policy = new SupervisorAssignmentPolicy($this->Conventionregistrationstudents->getConnection());
+							$policy->activate((array)$this->request->getData('chkRecordId'));
+							$this->Flash->success('Records are activated successfully.');
+						} catch (\DomainException $error) {
+							$this->Flash->error($error->getMessage());
+						}
                     } elseif ($action == "Deactivate") {
-                        $this->Conventionregistrationstudents->updateAll(['status' => '0'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are deactivated successfully.');
+						$pending = new \App\Service\CrossSchoolSponsorship($this->Conventionregistrationstudents->getConnection());
+						if ($pending->hasPending((array)$this->request->getData('chkRecordId'))) {
+							$this->Flash->error('The school must cancel pending cross-school requests before deactivating these students.');
+						} else {
+							$this->Conventionregistrationstudents->updateAll(['status' => '0'], ["id IN ($idList)"]);
+							$this->Flash->success('Records are deactivated successfully.');
+						}
                     } elseif ($action == "Delete") {
-                        $this->Conventionregistrationstudents->deleteAll(["id IN ($idList)"]);
-                        $this->Flash->success('Records are deleted successfully.');
+						$pending = new \App\Service\CrossSchoolSponsorship($this->Conventionregistrationstudents->getConnection());
+						if ($pending->hasPending((array)$this->request->getData('chkRecordId'))) {
+							$this->Flash->error('The school must cancel pending cross-school requests before deleting these students.');
+						} else {
+							$this->Conventionregistrationstudents->deleteAll(["id IN ($idList)"]);
+							$this->Flash->success('Records are deleted successfully.');
+						}
                     }
                 }
             }
@@ -1032,10 +1075,8 @@ class ConventionregistrationsController extends AppController {
 		{
 			$this->loadModel('Divisions');
 		}
-		$divisionNameById = $this->Divisions->find()
-			->select(['id', 'name'])
-			->enableHydration(false)
-			->combine('id', 'name')
+		$divisionNameById = $this->Divisions
+			->find('list', ['keyField' => 'id', 'valueField' => 'name'])
 			->toArray();
 
 		$judgeRegistrations = $this->Conventionregistrations->find()
@@ -1499,6 +1540,13 @@ class ConventionregistrationsController extends AppController {
 		}
 
 		$registrationId = (int)$convRegD->id;
+		$pending = new \App\Service\CrossSchoolSponsorship($this->Conventionregistrationstudents->getConnection());
+		$studentIds = $this->Conventionregistrationstudents->find()->where(['conventionregistration_id' => $registrationId])
+			->select(['id'])->all()->extract('id')->toList();
+		if ($pending->hasPending($studentIds)) {
+			$this->Flash->error('The school must cancel pending cross-school requests before its registration can be deleted.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'allschools']);
+		}
 
 		// Remove linked submissions and uploaded files first.
 		if ($this->hasTable('eventsubmissions')) {

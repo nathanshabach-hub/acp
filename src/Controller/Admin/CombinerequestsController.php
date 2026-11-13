@@ -11,7 +11,7 @@ use Cake\Datasource\ConnectionManager;
 #[\AllowDynamicProperties]
 class CombinerequestsController extends AppController {
 
-    public array $paginate = ['limit' => 50, 'order' => ['Combinerequests.name' => 'asc']];
+    public array $paginate = ['limit' => 50, 'order' => ['Combinerequests.id' => 'desc']];
 
     //public $helpers = array('Javascript', 'Ajax');
 
@@ -41,6 +41,12 @@ class CombinerequestsController extends AppController {
         $this->viewBuilder()->setLayout('admin');
         $this->set('manageCombinedRequests', '1');
         $this->set('combinedRequestsList', '1');
+        $teams = new \App\Service\CombinedTeams($this->Combinerequests->getConnection());
+        $this->set('combinedTeams', $teams->listing(null, (int)$this->request->getSession()->read('sess_admin_header_season_id')));
+        $this->set('adminCombinedTeams', true);
+        if (!(int)$this->request->getSession()->read('admin_id')) {
+            return $this->redirect(['controller' => 'admins', 'action' => 'login']);
+        }
 
         $separator = array();
         $condition = array();
@@ -55,20 +61,7 @@ class CombinerequestsController extends AppController {
 
         if ($this->request->is('post')) {
             if (isset($this->request->getData()['action'])) {
-                $idList = implode(',', $this->request->getData()['chkRecordId']);
-                $action = $this->request->getData()['action'];
-                if ($idList) {
-                    if ($action == "Activate") {
-                        $this->Combinerequests->updateAll(['status' => '1'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are activated successfully.');
-                    } elseif ($action == "Deactivate") {
-                        $this->Combinerequests->updateAll(['status' => '0'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are deactivated successfully.');
-                    } elseif ($action == "Delete") {
-                        $this->Combinerequests->deleteAll(["id IN ($idList)"]);
-                        $this->Flash->success('Records are deleted successfully.');
-                    }
-                }
+                throw new \Cake\Http\Exception\BadRequestException('Use the individual legacy request or whole-team decision buttons.');
             }
 
             if (isset($this->request->getData()['Combinerequests']['keyword']) && $this->request->getData()['Combinerequests']['keyword'] != '') {
@@ -79,8 +72,10 @@ class CombinerequestsController extends AppController {
                 $searchArr = $this->request->getParam('pass', []);
                 foreach ($searchArr as $val) {
                     if (strpos($val, ":") !== false) {
-                        $vars = explode(":", $val);
-                        ${$vars[0]} = urldecode($vars[1]);
+                        $vars = explode(":", $val, 2);
+                        if ($vars[0] === 'keyword') {
+                            $keyword = urldecode($vars[1]);
+                        }
                     }
                 }
             }
@@ -88,14 +83,25 @@ class CombinerequestsController extends AppController {
 
         if (isset($keyword) && $keyword != '') {
             $separator[] = 'keyword:' . urlencode($keyword);
-            $condition[] = "(Combinerequests.name LIKE '%".addslashes($keyword)."%')";
+            $condition['OR'] = [
+                'Combinerequests.student_name LIKE' => '%' . $keyword . '%',
+                'Events.event_name LIKE' => '%' . $keyword . '%',
+            ];
             $this->set('keyword', $keyword);
         }
         //pr($condition);exit;
         $separator = implode("/", $separator);
         $this->set('separator', $separator);
-        $this->paginate = ['contain' => ['Conventions','Users','Combineduser','Events'], 'conditions' => $condition, 'limit' => 20, 'order' => ['Combinerequests.name' => 'ASC']];
-        $this->set('combinerequests', $this->paginate($this->Combinerequests));
+        $query = $this->Combinerequests->find()->contain(['Conventions', 'Users', 'Combineduser', 'Events'])->where($condition)->orderBy(['Combinerequests.id' => 'DESC']);
+        if ($teams->available()) {
+            $query->where(['Combinerequests.combined_team_id IS' => null]);
+        }
+        $rows = $this->paginate($query, ['limit' => 20]);
+        $this->set('combinerequests', $rows);
+        $this->request = $this->request->withAttribute('paging', ['Combinerequests' => [
+            'page' => $rows->currentPage(), 'current' => $rows->count(), 'count' => $rows->totalCount(),
+            'prevPage' => $rows->hasPrevPage(), 'nextPage' => $rows->hasNextPage(),
+        ] + $rows->pagingParams()]);
         if ($this->request->is("ajax")) {
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin/Combinerequests');
@@ -103,11 +109,74 @@ class CombinerequestsController extends AppController {
         }
     }
 	
+    public function decideteam($id = null, $decision = null) {
+        $this->request->allowMethod(['post']);
+        $adminId = (int)$this->request->getSession()->read('admin_id');
+        if ($adminId <= 0) {
+            throw new \Cake\Http\Exception\ForbiddenException('Administrator login required.');
+        }
+        if (!in_array($decision, ['approve', 'decline'], true)) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid team decision.');
+        }
+        try {
+            (new \App\Service\CombinedTeams($this->Combinerequests->getConnection()))->decide((int)$id, $adminId, $decision === 'approve');
+        } catch (\DomainException $error) {
+            $this->Flash->error($error->getMessage());
+            return $this->redirect(['action' => 'index']);
+        } catch (\Exception $error) {
+            $this->log('Combined team decision failed: ' . $error->getMessage(), 'error');
+            $this->Flash->error('The team decision could not be completed. No partial approval was saved.');
+            return $this->redirect(['action' => 'index']);
+        }
+        $this->Flash->success($decision === 'approve'
+            ? 'Entire team approved. Either school can upload the one shared submission.'
+            : 'Entire team declined.');
+        try {
+            $this->notifyTeamDecision((int)$id, $decision === 'approve');
+        } catch (\Exception $error) {
+            $this->log('Combined team notification lookup failed for team ' . (int)$id . ': ' . $error->getMessage(), 'error');
+            $this->Flash->error('The team decision was saved, but school notification details could not be loaded.');
+        }
+        return $this->redirect(['action' => 'index']);
+    }
+
+    private function notifyTeamDecision(int $teamId, bool $approved): void {
+        $schools = $this->Combinerequests->getConnection()->execute(
+            'SELECT a.email_address AS source_email, b.email_address AS partner_email, a.first_name AS source_name, b.first_name AS partner_name, e.event_name, e.event_id_number
+             FROM combined_teams t JOIN conventionregistrations r ON r.id = t.source_registration_id
+             JOIN conventionregistrations p ON p.id = t.partner_registration_id
+             JOIN users a ON a.id = r.user_id JOIN users b ON b.id = p.user_id JOIN events e ON e.id = t.event_id
+             WHERE t.id = ?', [$teamId]
+        )->fetch('assoc');
+        if (!$schools) {
+            $this->log('Combined team decision notification has no school registrations: ' . $teamId, 'error');
+            $this->Flash->error('The team decision was saved, but school notification details could not be loaded.');
+            return;
+        }
+        $decision = $approved ? 'approved' : 'declined';
+        foreach (array_unique([$schools['source_email'], $schools['partner_email']]) as $address) {
+            try {
+                (new Email())->setEmailFormat('text')->setTo($address)
+                    ->setFrom([HEADERS_FROM_EMAIL => HEADERS_FROM_NAME])
+                    ->setSubject('Combined team ' . $decision . ': ' . $schools['event_id_number'])
+                    ->send('The combined team for ' . $schools['source_name'] . ' and ' . $schools['partner_name']
+                        . ' in ' . $schools['event_name'] . ' (' . $schools['event_id_number'] . ') has been ' . $decision . '.'
+                        . ($approved ? "\nEither school can upload or update the one shared team submission in the portal. No second request or group setup is needed." : "\nPlease contact the events team if you need to discuss this decision."));
+            } catch (\Exception $error) {
+                $this->log('Combined team decision email failed for team ' . $teamId . ': ' . $error->getMessage(), 'error');
+                $this->Flash->error('The team decision was saved, but a school notification email could not be sent.');
+            }
+        }
+    }
+
 	public function approverequest($slug=null) {
         
 		$requestD = $this->Combinerequests->find()->where(['Combinerequests.slug' => $slug,'Combinerequests.status' => 2])->contain(['Conventions','Users','Combineduser','Events'])->first();
 		if($requestD)
 		{
+            if ($requestD->combined_team_id) {
+                throw new \Cake\Http\Exception\BadRequestException('Approve the whole combined team instead.');
+            }
 			$this->Combinerequests->updateAll(['status' => '1','modified' => date('Y-m-d H:i:s', time())], ["slug"=>$slug]);
 			
 			// now sendning email to user who added this request
@@ -149,6 +218,9 @@ class CombinerequestsController extends AppController {
 		$requestD = $this->Combinerequests->find()->where(['Combinerequests.slug' => $slug,'Combinerequests.status' => 2])->contain(['Conventions','Users','Combineduser','Events'])->first();
 		if($requestD)
 		{
+            if ($requestD->combined_team_id) {
+                throw new \Cake\Http\Exception\BadRequestException('Decline the whole combined team instead.');
+            }
 			$this->Combinerequests->updateAll(['status' => '0','modified' => date('Y-m-d H:i:s', time())], ["slug"=>$slug]);
 			
 			// now sendning email to user who added this request

@@ -9,7 +9,7 @@
 			</div>
 			<div class="teachers-top-heading">
 				<span>Combined Requests</span>
-				<?php echo $this->Html->link(' + Combined Team/Group Events', ['controller' => 'combinerequests', 'action' => 'addrequest'], ['escape' => false, 'class' => 'btn btn-primary', 'style' => 'margin-right:14px;']); ?>
+				<?php echo $this->Html->link(' + Combined Team/Group Events', ['controller' => 'combinerequests', 'action' => 'addrequest'], ['escape' => false, 'class' => 'btn btn-primary', 'style' => 'margin-right:14px;', 'confirm' => 'You are about to create a request to combine your team or group with another school. Continue?']); ?>
 			</div>
 			<!-- dashboard-section-2 start-->
 

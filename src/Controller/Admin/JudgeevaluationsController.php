@@ -39,6 +39,7 @@ class JudgeevaluationsController extends AppController {
         $this->loadModel('Crstudentevents');
         $this->loadModel('Users');
 		$this->loadModel('Judgeevaluationmarks');
+		$this->loadModel('Evaluationquestions');
     }
 	
 	public function index() {
@@ -48,10 +49,16 @@ class JudgeevaluationsController extends AppController {
         $this->set('judgeEvaluations', '1');
         $this->set('judgeEvaluationsList', '1');
 		
-		$conventionsDD = $this->Conventions->find()->where([])->order(['Conventions.name' => 'ASC'])->combine('id', 'name')->toArray();
+		$conventionsDD = $this->Conventions
+			->find('list', ['keyField' => 'id', 'valueField' => 'name'])
+			->order(['Conventions.name' => 'ASC'])
+			->toArray();
 		$this->set('conventionsDD', $conventionsDD);
 		
-		$seasonsDD = $this->Seasons->find()->where([])->order(['Seasons.season_year' => 'DESC'])->combine('season_year', 'season_year')->toArray();
+		$seasonsDD = $this->Seasons
+			->find('list', ['keyField' => 'season_year', 'valueField' => 'season_year'])
+			->order(['Seasons.season_year' => 'DESC'])
+			->toArray();
 		$this->set('seasonsDD', $seasonsDD);
 		
 		$eventsDD = array();
@@ -130,11 +137,22 @@ class JudgeevaluationsController extends AppController {
 		
         $separator = implode("/", $separator);
         $this->set('separator', $separator);
-        $judgeEvaluations = $this->Judgeevaluations->find()
-            ->contain(['Eventsubmissions','Conventions','Events','Students','Schools','Judge'])
-            ->where($condition)
-            ->order(['Judgeevaluations.id' => 'DESC'])
-            ->all();
+        $judgeEvaluationsPage = $this->paginate(
+            $this->Judgeevaluations->find()
+                ->contain([
+                    'Eventsubmissions',
+                    'Conventions',
+                    'Events',
+                    'Students',
+                    'Schools',
+                    'Judge',
+                    'Judgeevaluationmarks',
+                ])
+                ->where($condition)
+                ->order(['Judgeevaluations.id' => 'DESC']),
+            ['limit' => 50]
+        );
+        $judgeEvaluations = $judgeEvaluationsPage->toList();
         $judgeUserIds = [];
         foreach ($judgeEvaluations as $judgeEvaluation) {
             if (!empty($judgeEvaluation->uploaded_by_user_id)) {
@@ -173,6 +191,7 @@ class JudgeevaluationsController extends AppController {
         $combinedSchoolLabels = [];
         $groupedEvaluations = [];
         $groupMemberIdsCache = [];
+        $groupRegistrationIdsCache = [];
         $groupSchoolNamesByRegistrationCache = [];
         $neededSchoolUserIds = [];
         foreach ($judgeEvaluations as $judgeEvaluation) {
@@ -184,12 +203,11 @@ class JudgeevaluationsController extends AppController {
             }
 
             $groupName = trim((string)($submission->group_name ?? ''));
-            $groupBaseKey = (int)$submission->conventionregistration_id.'|'.(int)$submission->conventionseason_id.'|'.(int)$submission->convention_id.'|'.(int)$submission->season_id.'|'.(int)$submission->season_year.'|'.(int)$submission->event_id.'|'.$groupName;
+            $groupBaseKey = (int)$submission->conventionseason_id.'|'.(int)$submission->convention_id.'|'.(int)$submission->season_id.'|'.(int)$submission->season_year.'|'.(int)$submission->event_id.'|'.$groupName;
             if (!isset($groupMemberIdsCache[$groupBaseKey])) {
                 $memberIdsForGroup = $this->Crstudentevents->find()
                     ->select(['student_id'])
                     ->where([
-                        'Crstudentevents.conventionregistration_id' => (int)$submission->conventionregistration_id,
                         'Crstudentevents.conventionseason_id' => (int)$submission->conventionseason_id,
                         'Crstudentevents.convention_id' => (int)$submission->convention_id,
                         'Crstudentevents.season_id' => (int)$submission->season_id,
@@ -198,12 +216,32 @@ class JudgeevaluationsController extends AppController {
                         'Crstudentevents.group_name' => $groupName,
                         'Crstudentevents.student_id >' => 0,
                     ])
+                    ->all()
                     ->extract('student_id')
                     ->map(static function ($studentId) {
                         return (int)$studentId;
                     })
                     ->toList();
                 $groupMemberIdsCache[$groupBaseKey] = $memberIdsForGroup;
+            }
+            if (!isset($groupRegistrationIdsCache[$groupBaseKey])) {
+                $registrationIdsForGroup = $this->Crstudentevents->find()
+                    ->select(['conventionregistration_id'])
+                    ->where([
+                        'Crstudentevents.conventionseason_id' => (int)$submission->conventionseason_id,
+                        'Crstudentevents.convention_id' => (int)$submission->convention_id,
+                        'Crstudentevents.season_id' => (int)$submission->season_id,
+                        'Crstudentevents.season_year' => (int)$submission->season_year,
+                        'Crstudentevents.event_id' => (int)$submission->event_id,
+                        'Crstudentevents.group_name' => $groupName,
+                    ])
+                    ->all()
+                    ->extract('conventionregistration_id')
+                    ->map(static function ($registrationId) {
+                        return (int)$registrationId;
+                    })
+                    ->toList();
+                $groupRegistrationIdsCache[$groupBaseKey] = array_values(array_unique(array_filter($registrationIdsForGroup)));
             }
             $memberIds = $groupMemberIdsCache[$groupBaseKey];
             $memberIds = array_values(array_unique(array_filter($memberIds)));
@@ -220,10 +258,9 @@ class JudgeevaluationsController extends AppController {
             if (!isset($groupedEvaluations[$groupKey])) {
                 $groupedEvaluations[$groupKey] = [
                     'primary' => $judgeEvaluation,
-                    'convention_registration_ids' => [],
+                    'convention_registration_ids' => $groupRegistrationIdsCache[$groupBaseKey] ?? [],
                 ];
             }
-            $groupedEvaluations[$groupKey]['convention_registration_ids'][] = (int)$submission->conventionregistration_id;
         }
 
         foreach ($groupedEvaluations as $groupedEvaluation) {
@@ -297,10 +334,34 @@ class JudgeevaluationsController extends AppController {
                 $combinedSchoolLabels[(int)$primary->id] = implode(' + ', $schoolNames);
             }
         }
-        $this->set('judgeevaluations', $judgeEvaluations);
+        $evaluationQuestionIds = [];
+        foreach ($judgeEvaluations as $judgeEvaluation) {
+            if (empty($judgeEvaluation->Judgeevaluationmarks)) {
+                continue;
+            }
+            foreach ($judgeEvaluation->Judgeevaluationmarks as $judgeEvaluationMark) {
+                $questionId = (int)($judgeEvaluationMark->question_id ?? 0);
+                if ($questionId > 0) {
+                    $evaluationQuestionIds[$questionId] = $questionId;
+                }
+            }
+        }
+        $evaluationQuestionsById = [];
+        if (!empty($evaluationQuestionIds)) {
+            $evaluationQuestionRows = $this->Evaluationquestions->find()
+                ->select(['id', 'question'])
+                ->where(['Evaluationquestions.id IN' => array_values($evaluationQuestionIds)])
+                ->all();
+            foreach ($evaluationQuestionRows as $evaluationQuestionRow) {
+                $evaluationQuestionsById[(int)$evaluationQuestionRow->id] = (string)$evaluationQuestionRow->question;
+            }
+        }
+
+        $this->set('judgeevaluations', $judgeEvaluationsPage);
         $this->set('judgeEvaluationRows', $judgeEvaluationRows);
         $this->set('combinedSchoolLabels', $combinedSchoolLabels);
         $this->set('judgeUsersById', $judgeUsersById);
+        $this->set('evaluationQuestionsById', $evaluationQuestionsById);
         if ($this->request->is("ajax")) {
             $this->viewBuilder()->setLayout(($this->request->is("ajax")) ? "" : "default");
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin/Judgeevaluations');

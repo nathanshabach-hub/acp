@@ -3,6 +3,7 @@
 namespace App\Controller\Admin;
 
 use App\Controller\AppController;
+use App\Service\GuidelineBreachPolicy;
 use Cake\Core\Configure;
 use Cake\Core\Configure\Engine\PhpConfig;
 use Cake\Datasource\ConnectionManager;
@@ -200,7 +201,7 @@ class EventsubmissionsController extends AppController {
 				])
 				->first();
 
-			if ($hasEvaluation) {
+			if ($hasEvaluation || $submission->combined_team_id) {
 				$protected++;
 				continue;
 			}
@@ -214,12 +215,12 @@ class EventsubmissionsController extends AppController {
 		if ($deleted > 0) {
 			$message = sprintf('%d upload(s) removed.', $deleted);
 			if ($protected > 0) {
-				$message .= sprintf(' %d skipped because a judge evaluation exists.', $protected);
+				$message .= sprintf(' %d skipped because they are judge-evaluated or shared combined-team submissions.', $protected);
 			}
 			$this->Flash->success($message);
 		} else {
 			$this->Flash->error($protected > 0
-				? 'No uploads were removed. Judge-evaluated submissions cannot be deleted.'
+				? 'No uploads were removed. Judge-evaluated and shared combined-team submissions cannot be deleted individually.'
 				: 'No selected uploads could be deleted from this season.');
 		}
 
@@ -277,7 +278,7 @@ class EventsubmissionsController extends AppController {
 					'Judgeevaluations.conventionregistration_id' => $submission->conventionregistration_id,
 				])
 				->first();
-			if ($hasEvaluation) {
+			if ($hasEvaluation || $submission->combined_team_id) {
 				$protected++;
 				continue;
 			}
@@ -291,12 +292,12 @@ class EventsubmissionsController extends AppController {
 		if ($deleted > 0) {
 			$message = sprintf('%d event submission(s) removed.', $deleted);
 			if ($protected > 0) {
-				$message .= sprintf(' %d skipped because a judge evaluation exists.', $protected);
+				$message .= sprintf(' %d skipped because they are judge-evaluated or shared combined-team submissions.', $protected);
 			}
 			$this->Flash->success($message);
 		} else {
 			$this->Flash->error($protected > 0
-				? 'No submissions were removed. Judge-evaluated submissions cannot be deleted.'
+				? 'No submissions were removed. Judge-evaluated and shared combined-team submissions cannot be deleted individually.'
 				: 'No selected submissions could be deleted from this registration.');
 		}
 
@@ -304,6 +305,7 @@ class EventsubmissionsController extends AppController {
 	}
 
 	private function getRegistrationSubmissionConditions($registration) {
+        $teams = new \App\Service\CombinedTeams($this->Eventsubmissions->getConnection());
 		$conditions = [
 			'Eventsubmissions.conventionregistration_id' => (int)$registration->id,
 		];
@@ -311,7 +313,6 @@ class EventsubmissionsController extends AppController {
 		$partnerSchoolIds = [];
 
 		$approvedCombinedRows = $this->Combinerequests->find()
-			->select(['event_id', 'user_id', 'combine_with_user_id'])
 			->where([
 				'Combinerequests.status' => 1,
 				'Combinerequests.conventionseason_id' => (int)$registration->conventionseason_id,
@@ -323,6 +324,9 @@ class EventsubmissionsController extends AppController {
 			->all();
 
 		foreach ($approvedCombinedRows as $combinedRow) {
+            if ($combinedRow->combined_team_id) {
+                continue;
+            }
 			$approvedEventIds[] = (int)$combinedRow->event_id;
 			foreach ([(int)$combinedRow->user_id, (int)$combinedRow->combine_with_user_id] as $schoolId) {
 				if ($schoolId > 0 && $schoolId !== (int)$registration->user_id) {
@@ -332,7 +336,7 @@ class EventsubmissionsController extends AppController {
 		}
 
 		$mixedGroupRows = $this->Crstudentevents->find()
-			->select(['student_id', 'event_id'])
+			->select(['student_id', 'event_id', 'group_name'])
 			->where([
 				'Crstudentevents.conventionregistration_id' => (int)$registration->id,
 				'Crstudentevents.event_id >' => 0,
@@ -344,6 +348,9 @@ class EventsubmissionsController extends AppController {
 
 		$studentIds = [];
 		foreach ($mixedGroupRows as $mixedGroupRow) {
+            if ($teams->approvedForGroup((int)$registration->id, (int)$mixedGroupRow->event_id, (string)$mixedGroupRow->group_name)) {
+                continue;
+            }
 			$studentIds[] = (int)$mixedGroupRow->student_id;
 			$approvedEventIds[] = (int)$mixedGroupRow->event_id;
 		}
@@ -371,7 +378,7 @@ class EventsubmissionsController extends AppController {
 					'Conventionregistrations.conventionseason_id' => (int)$registration->conventionseason_id,
 					'Conventionregistrations.user_id IN' => $partnerSchoolIds,
 				])
-				->extract('id')
+				->all()->extract('id')
 				->map(static function ($id) {
 					return (int)$id;
 				})
@@ -390,6 +397,12 @@ class EventsubmissionsController extends AppController {
 			}
 		}
 
+        if ($teams->available()) {
+            return ['OR' => [
+                ['AND' => [$conditions, ['Eventsubmissions.combined_team_id IS' => null]]],
+                ['Eventsubmissions.id IN' => $teams->sharedSubmissionIds((int)$registration->id) ?: [0]],
+            ]];
+        }
 		return $conditions;
 	}
 
@@ -479,6 +492,10 @@ class EventsubmissionsController extends AppController {
 			
 			if($checkExists)
 			{	
+                if ($checkExists->combined_team_id) {
+                    $this->Flash->error('This shared combined-team submission cannot be deleted individually. Either school can replace its uploaded content.');
+                    return $this->redirect(['action' => 'index', $conv_reg_slug]);
+                }
 				// to check if any judge submitted evaluation or not
 				$checkJudgeEval = $this->Judgeevaluations->find()->where(['Judgeevaluations.eventsubmission_id' => $checkExists->id,'Judgeevaluations.conventionregistration_id' => $convRedG->id])->first();
 				if($checkJudgeEval)
@@ -535,54 +552,106 @@ class EventsubmissionsController extends AppController {
         $this->paginate = ['contain' => ['Conventionregistrations','Conventions','Users','Events','Students','Uploadeduser','Judge'], 'conditions' => $condition, 'limit' => 100000, 'order' => ['Eventsubmissions.modified' => 'DESC']];
         $this->set('eventsubmissions', $this->paginate($this->Eventsubmissions));
         if ($this->request->is("ajax")) {
-            $this->viewBuilder()->setLayout(($this->request->is("ajax")) ? "" : "default");
-            $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin/Eventsubmissions');
+            $this->viewBuilder()->setLayout('');
+            $this->viewBuilder()->setTemplatePath('element' . DS . 'Admin/Eventsubmissions');
             $this->render('guidelinebreach');
         }
     }
 	
 	public function approveguidelinebreach($slug=null) {
-        
-		$eventSubmissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $slug])->first();
-		if($eventSubmissionD)
-		{
-			$this->Eventsubmissions->updateAll(['guideline_breach' => '2','modified' => date('Y-m-d H:i:s')], ["slug"=>$slug]);
-			
-			// check if judge evaluated, then set marks to 0
-			$this->Judgeevaluations->updateAll(['total_marks_obtained' => '0','modified' => date('Y-m-d H:i:s')], ["eventsubmission_id"=>$eventSubmissionD->id]);
-			
-			$this->Flash->success('Guideline breach approved successfully. Marks has been set to 0.');
-		
-		}
-		else
-		{
-			$this->Flash->error('Invalid action.');
-		}
-        $this->redirect(['controller'=>'eventsubmissions', 'action' => 'guidelinebreach']);
+		return $this->applyGuidelineBreachReview($slug, 'accept');
     }
 	
 	public function rejectguidelinebreach($slug=null) {
-        
-		$eventSubmissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $slug])->first();
-		if($eventSubmissionD)
-		{
-			$this->Eventsubmissions->updateAll(['guideline_breach' => '0','guideline_breach_by_judge_id' => '0','modified' => date('Y-m-d H:i:s')], ["slug"=>$slug]);
-			
-			$this->Flash->success('Guideline breach declined successfully.');
-		}
-		else
-		{
-			$this->Flash->error('Invalid action.');
-		}
-        $this->redirect(['controller'=>'eventsubmissions', 'action' => 'guidelinebreach']);
+		return $this->applyGuidelineBreachReview($slug, 'reject');
     }
+
+	public function reviewguidelinebreach($slug = null)
+	{
+		if (!$this->request->is('post')) {
+			throw new \Cake\Http\Exception\MethodNotAllowedException('Breach reviews require POST.');
+		}
+
+		$decision = (string)$this->request->getData('decision');
+		if (!in_array($decision, ['accept', 'reject'], true)) {
+			$this->Flash->error('Choose whether to accept or reject this breach.');
+			return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+		}
+		return $this->applyGuidelineBreachReview($slug, $decision);
+	}
+
+	private function applyGuidelineBreachReview($slug, string $decision)
+	{
+		if (!$this->request->is('post')) {
+			throw new \Cake\Http\Exception\MethodNotAllowedException('Breach reviews require POST.');
+		}
+
+		$eventSubmission = $this->Eventsubmissions->find()
+			->where(['Eventsubmissions.slug' => $slug])
+			->first();
+		if (!$eventSubmission || (int)$eventSubmission->guideline_breach !== GuidelineBreachPolicy::STATUS_PENDING) {
+			$this->Flash->error('This breach is no longer awaiting review.');
+			return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+		}
+
+		$level = strtolower(trim((string)$this->request->getData('guideline_breach_level')));
+		if (!GuidelineBreachPolicy::validLevel($level)) {
+			$this->Flash->error('Select a valid guideline breach level.');
+			return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+		}
+
+		$originalLevel = (string)($eventSubmission->guideline_breach_level ?? '');
+		$levelRank = [GuidelineBreachPolicy::LEVEL_MINOR => 1, GuidelineBreachPolicy::LEVEL_MAJOR => 2, GuidelineBreachPolicy::LEVEL_EXTREME => 3];
+		if (GuidelineBreachPolicy::validLevel($originalLevel) && $levelRank[$level] > $levelRank[$originalLevel]) {
+			$this->Flash->error('The Events Team may downgrade a breach, but cannot increase its severity.');
+			return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+		}
+
+		$teamResponse = trim((string)$this->request->getData('guideline_breach_team_response'));
+		$displayRemoved = $decision === 'accept'
+			&& $level === GuidelineBreachPolicy::LEVEL_EXTREME
+			&& (string)$this->request->getData('guideline_breach_display_removed') === '1';
+
+		$updated = $this->Eventsubmissions->updateAll([
+			'guideline_breach' => $decision === 'accept'
+				? GuidelineBreachPolicy::STATUS_ACCEPTED
+				: GuidelineBreachPolicy::STATUS_REJECTED,
+			'guideline_breach_level' => $level,
+			'guideline_breach_team_response' => $teamResponse !== '' ? $teamResponse : null,
+			'guideline_breach_display_removed' => $displayRemoved ? 1 : 0,
+			'modified' => date('Y-m-d H:i:s'),
+		], [
+			'id' => (int)$eventSubmission->id,
+			'guideline_breach' => GuidelineBreachPolicy::STATUS_PENDING,
+		]);
+		if ($updated !== 1) {
+			$this->Flash->error('This breach was updated by another team member and is no longer awaiting review.');
+			return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+		}
+
+		$this->Flash->success($decision === 'accept'
+			? 'Guideline breach accepted. Tier restrictions are now in effect.'
+			: 'Guideline breach rejected. The entry is eligible for judging and placement again.');
+		return $this->redirect(['controller' => 'eventsubmissions', 'action' => 'guidelinebreach']);
+	}
 	
 	public function deleteguidelinebreach($slug=null) {
-        
+		if (!$this->request->is('post')) {
+			throw new \Cake\Http\Exception\MethodNotAllowedException('Clearing a breach requires POST.');
+		}
+
 		$eventSubmissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $slug])->first();
 		if($eventSubmissionD)
 		{
-			$this->Eventsubmissions->updateAll(['guideline_breach' => '0','guideline_breach_by_judge_id' => '0','modified' => date('Y-m-d H:i:s')], ["slug"=>$slug]);
+			$this->Eventsubmissions->updateAll([
+				'guideline_breach' => GuidelineBreachPolicy::STATUS_NONE,
+				'guideline_breach_by_judge_id' => 0,
+				'guideline_breach_reason' => null,
+				'guideline_breach_level' => null,
+				'guideline_breach_team_response' => null,
+				'guideline_breach_display_removed' => 0,
+				'modified' => date('Y-m-d H:i:s'),
+			], ["slug"=>$slug]);
 			
 			$this->Flash->success('Guideline breach deleted successfully.');
 		}
@@ -590,7 +659,7 @@ class EventsubmissionsController extends AppController {
 		{
 			$this->Flash->error('Invalid action.');
 		}
-        $this->redirect(['controller'=>'eventsubmissions', 'action' => 'guidelinebreach']);
+        return $this->redirect(['controller'=>'eventsubmissions', 'action' => 'guidelinebreach']);
     }
 	
 	public function commandperformance($slug=null) {

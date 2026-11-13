@@ -709,6 +709,7 @@
                 </div>
             </div>
             <div class="box-body">
+                <div class="ersu_message"><?php echo $this->Flash->render(); ?></div>
                 <?php
                 $regionsLeft = isset($squad247Data['regions_left']) && is_array($squad247Data['regions_left']) ? $squad247Data['regions_left'] : array();
                 $regionsRight = isset($squad247Data['regions_right']) && is_array($squad247Data['regions_right']) ? $squad247Data['regions_right'] : array();
@@ -839,6 +840,37 @@
                                     <p class="help-block" style="margin-bottom:0;">This updates the subtitle shown on the public 24/7 application page.</p>
                                 </div>
                             </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="panel panel-default">
+                                <div class="panel-heading" role="tab" id="s247-editor-heading-dates-message">
+                                    <h4 class="panel-title">
+                                        <a class="collapsed" role="button" href="#s247-editor-dates-message" aria-expanded="false" aria-controls="s247-editor-dates-message">
+                                            Convention Dates Message
+                                            <i class="fa fa-chevron-down pull-right"></i>
+                                        </a>
+                                    </h4>
+                                </div>
+                                <div id="s247-editor-dates-message" class="panel-collapse s247-collapse" role="tabpanel" aria-labelledby="s247-editor-heading-dates-message">
+                                    <div class="panel-body">
+                                        <div class="form-group">
+                                            <div class="col-sm-9 col-sm-offset-3">
+                                                <input type="hidden" name="Squad247[convention_dates_message_enabled]" value="0">
+                                                <label>
+                                                    <input type="checkbox" name="Squad247[convention_dates_message_enabled]" value="1"<?php echo !empty($squad247Data['convention_dates_message_enabled']) ? ' checked' : ''; ?>>
+                                                    Display message and hide convention dates and fees
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="col-sm-3 control-label" for="s247-dates-message">Public message</label>
+                                            <div class="col-sm-9">
+                                                <textarea id="s247-dates-message" name="Squad247[convention_dates_message]" class="form-control" rows="3" placeholder="2027 Convention dates will be available soon"><?php echo h($squad247Data['convention_dates_message'] ?? ''); ?></textarea>
+                                                <p class="help-block">Tick the box and save to display the message instead of the dates and hide fees. Untick it and save to show the saved dates and fees again. Convention selection remains available.</p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

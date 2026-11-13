@@ -103,7 +103,7 @@
                     $windowCount = 0;
                     foreach ($eventsForTweaks as $evStat) {
                         $twStat = $tweaksMap[$evStat->id] ?? null;
-                        if ($twStat && ($twStat->pinned_day || $twStat->pinned_room_id || $twStat->pinned_start_time || $twStat->available_from_time || $twStat->available_to_time)) {
+                        if ($twStat && ($twStat->pinned_day || $twStat->pinned_room_id || $twStat->pinned_start_time || $twStat->available_from_time || $twStat->available_to_time || !empty($twStat->concurrent_students_at_once))) {
                             $activeTweaksCount++;
                         }
                         if ($twStat && ($twStat->pinned_day || $twStat->pinned_room_id || $twStat->pinned_start_time)) {
@@ -201,7 +201,7 @@
                                 <?php $idx = 1; foreach ($eventsForTweaks as $ev): ?>
                                     <?php $tw = $tweaksMap[$ev->id] ?? null; ?>
                                     <?php
-                                    $hasAny = $tw && ($tw->pinned_day || $tw->pinned_room_id || $tw->pinned_start_time || $tw->available_from_time || $tw->available_to_time);
+                                    $hasAny = $tw && ($tw->pinned_day || $tw->pinned_room_id || $tw->pinned_start_time || $tw->available_from_time || $tw->available_to_time || !empty($tw->concurrent_students_at_once));
                                     $pinnedRoomName = '';
                                     if ($tw && $tw->pinned_room_id) {
                                         foreach ($rooms as $rm) {
@@ -244,6 +244,9 @@
                                             <?php if ($tw && ($tw->available_from_time || $tw->available_to_time)): ?>
                                                 <span class="tweak-rule-chip">Window: <?php echo h(($tw->available_from_time ? date('H:i', strtotime((string)$tw->available_from_time)) : '...') . ' - ' . ($tw->available_to_time ? date('H:i', strtotime((string)$tw->available_to_time)) : '...')); ?></span>
                                             <?php endif; ?>
+                                            <?php if ($tw && !empty($tw->concurrent_students_at_once)): ?>
+                                                <span class="tweak-rule-chip">At once: <?php echo h((int)$tw->concurrent_students_at_once); ?> students</span>
+                                            <?php endif; ?>
                                             <?php if (!$hasAny): ?>
                                                 <span class="tweak-rule-chip dim">No active rules</span>
                                             <?php endif; ?>
@@ -266,6 +269,7 @@
                                                 data-pinned-start-time="<?php echo h(($tw && $tw->pinned_start_time) ? date('H:i', strtotime((string)$tw->pinned_start_time)) : ''); ?>"
                                                 data-available-from="<?php echo h(($tw && $tw->available_from_time) ? date('H:i', strtotime((string)$tw->available_from_time)) : ''); ?>"
                                                 data-available-to="<?php echo h(($tw && $tw->available_to_time) ? date('H:i', strtotime((string)$tw->available_to_time)) : ''); ?>"
+                                                data-concurrent-students-at-once="<?php echo h((string)($tw->concurrent_students_at_once ?? '')); ?>"
                                                 data-clear-url="<?php echo h($clearUrl); ?>"
                                             >Edit</button>
                                         </td>
@@ -340,6 +344,17 @@
                                     </div>
                                 </div>
 
+                                <div class="form-group">
+                                    <label class="tweak-editor-label">E - Students at once (Spelling U16/OPEN)</label>
+                                    <?php echo $this->Form->number('concurrent_students_at_once', [
+                                        'class' => 'form-control input-sm',
+                                        'id' => 'side_concurrent_students_at_once',
+                                        'min' => 1,
+                                        'required' => false,
+                                        'placeholder' => 'Leave blank to use default',
+                                    ]); ?>
+                                </div>
+
                                 <div class="form-group" style="margin-top:12px;">
                                     <?php echo $this->Form->button('Save Tweaks', ['class' => 'btn btn-primary btn-sm', 'id' => 'sideSaveBtn', 'disabled' => true]); ?>
                                     <a id="sideClearBtn" href="#" class="btn btn-danger btn-sm" style="display:none;" onclick="return confirm('Clear all tweaks for this event?');">Clear</a>
@@ -404,6 +419,16 @@
                                                 ]); ?>
                                             </div>
                                         </div>
+
+                                        <div class="tweak-bulk-field">
+                                            <label style="font-weight:normal; margin-bottom:5px;"><input type="checkbox" id="bulk_apply_concurrent_students_at_once" name="apply_concurrent_students_at_once" value="1"> Apply E - Students at once (Spelling U16/OPEN)</label>
+                                            <?php echo $this->Form->number('concurrent_students_at_once', [
+                                                'class' => 'form-control input-sm',
+                                                'min' => 1,
+                                                'required' => false,
+                                                'placeholder' => 'Leave blank to clear',
+                                            ]); ?>
+                                        </div>
                                     </div>
 
                                     <div>
@@ -429,6 +454,7 @@
                         var sidePinnedStart = document.getElementById('side_pinned_start_time');
                         var sideAvailFrom = document.getElementById('side_available_from_time');
                         var sideAvailTo = document.getElementById('side_available_to_time');
+                        var sideConcurrentAtOnce = document.getElementById('side_concurrent_students_at_once');
                         var sideSaveBtn = document.getElementById('sideSaveBtn');
                         var sideClearBtn = document.getElementById('sideClearBtn');
                         var bulkToggleAll = document.getElementById('bulkToggleAll');
@@ -553,6 +579,7 @@
                                 sidePinnedStart.value = btn.getAttribute('data-pinned-start-time') || '';
                                 sideAvailFrom.value = btn.getAttribute('data-available-from') || '';
                                 sideAvailTo.value = btn.getAttribute('data-available-to') || '';
+                                sideConcurrentAtOnce.value = btn.getAttribute('data-concurrent-students-at-once') || '';
                                 sideSaveBtn.disabled = false;
 
                                 var clearUrl = btn.getAttribute('data-clear-url') || '';

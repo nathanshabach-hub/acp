@@ -92,7 +92,7 @@ $seasonYear = (isset($conventionSD) && $conventionSD) ? (string)($conventionSD->
 
           <div class="sr-section-title">Maintenance</div>
           <div class="sr-grid">
-            <?php $renderCard(['controller'=>'schedulingtimings','action'=>'removeoverlapping',$convention_season_slug], 'Remove Overlapping / Conflict', 'Open the conflict cleanup workflow', 'fa-exclamation-triangle', 'sr-c-red'); ?>
+            <?php $renderCard(['controller'=>'schedulings','action'=>'resolvepreview',$convention_season_slug], 'Remove Overlapping / Conflict', 'Preview conflicts before confirming any repairs', 'fa-exclamation-triangle', 'sr-c-red'); ?>
           </div>
         </div>
       </div>

@@ -45,6 +45,9 @@
                       <div class="col-sm-10 room-selector-wrap">
 						  <div class="field-hint">Select one or more events for this room.</div>
 						  <?php echo $this->Form->select('Conventionseasonroomevents.event_ids', $convSeasEventDD, ['id' => 'event_ids', 'multiple' =>'multiple', 'label' => false, 'div' => false, 'class' => 'form-control js-example-basic-multiple required', 'autocomplete' => 'off', 'value' =>$convRoomIDS]); ?>
+						  <?php if (empty($convSeasEventDD)) { ?>
+						  <div class="alert alert-info" style="margin-top:8px;">All schedulable events are already assigned to rooms for this season.</div>
+						  <?php } ?>
 							<script>
 							$(document).ready(function() {
 								$('#event_ids').select2({
@@ -53,6 +56,13 @@
 								});
 							});
 						</script>
+                      </div>
+                    </div>
+					<div class="form-group compact-field">
+                      <label class="col-sm-2 control-label">Number of Games <span class="require">*</span></label>
+                      <div class="col-sm-10">
+						<?php echo $this->Form->input('Conventionseasonroomevents.number_games', ['type' => 'number', 'min' => 1, 'step' => 1, 'label' => false, 'div' => false, 'class' => 'form-control required', 'value' => !empty($conventionSRoomD->number_games) ? (int)$conventionSRoomD->number_games : 1]); ?>
+						<div class="field-hint">How many games can run at once for this room setup.</div>
                       </div>
                     </div>
 					
@@ -83,6 +93,7 @@
                           </div>
                         </div>
                     </div>
+					</div>
 					
 					
                     <div class="box-footer">

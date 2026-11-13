@@ -33,7 +33,6 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
     ?>
     <div class="panel-body">
         <div class="ersu_message"> <?php echo $this->Flash->render() ?></div>
-        <?php echo $this->Form->create(null, ['id'=>'actionFrom', "method" => "Post"]);  ?>
         <section id="no-more-tables" class="lstng-section">
             
             <div class="tbl-resp-listing">
@@ -41,6 +40,7 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                     <thead class="cf ajshort">
                         <tr>
                             <th class="sorting_paging">#ID</th>
+                            <th class="sorting_paging">Level</th>
                             <th class="sorting_paging">School</th>
                             <th class="sorting_paging">Convention</th>
                             <th class="sorting_paging">Event</th>
@@ -50,6 +50,8 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                             <th class="sorting_paging">Submitted Time</th>
                             <th class="sorting_paging">Status</th>
                             <th class="sorting_paging">Reason</th>
+                            <th class="sorting_paging">Events Team Response</th>
+                            <th class="sorting_paging">Display</th>
                             <th class="action_dvv"><i class=" fa fa-gavel"></i> Action</th>
                         </tr>
                     </thead>
@@ -57,6 +59,20 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                         <?php foreach ($eventsubmissions as $datarecord) { ?>
                             <tr>
                                 <td data-title="#ID"><?php echo $datarecord->id;?></td>
+                                <?php
+                                $breachLevel = (string)($datarecord->guideline_breach_level ?? '');
+                                $breachLevelLabels = [
+                                    'minor' => ['Minor', '#b7950b'],
+                                    'major' => ['Major', '#e67e22'],
+                                    'extreme' => ['Extreme', '#c0392b'],
+                                ];
+                                $breachLevelDisplay = $breachLevelLabels[$breachLevel] ?? ['Unclassified', '#6c757d'];
+                                ?>
+                                <td data-title="Level">
+                                    <span style="color:<?php echo h($breachLevelDisplay[1]); ?>;font-weight:700;" aria-label="<?php echo h($breachLevelDisplay[0]); ?>">
+                                        <i class="fa fa-times" aria-hidden="true"></i> <?php echo h($breachLevelDisplay[0]); ?>
+                                    </span>
+                                </td>
                                 <td data-title="School">
                                     <?php
                                     $schoolName = trim((string)($datarecord->Users['first_name'] ?? '') . ' ' . (string)($datarecord->Users['last_name'] ?? ''));
@@ -93,7 +109,9 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                                     <?php if($datarecord->guideline_breach == 1): ?>
                                         <span style="background:#e67e22;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;">Pending</span>
                                     <?php elseif($datarecord->guideline_breach == 2): ?>
-                                        <span style="background:#27ae60;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;">Approved</span>
+                                        <span style="background:#27ae60;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;">Accepted</span>
+                                    <?php elseif($datarecord->guideline_breach == 3): ?>
+                                        <span style="background:#6c757d;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;">Rejected</span>
                                     <?php endif; ?>
                                 </td>
                                 <td data-title="Reason">
@@ -107,12 +125,68 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                                         <i class="fa fa-eye"></i>
                                     </button>
                                 </td>
+                                <td data-title="Events Team Response" style="white-space:pre-wrap;"><?php echo h(trim((string)($datarecord->guideline_breach_team_response ?? '')) ?: '—'); ?></td>
+                                <td data-title="Display">
+                                    <?php if (\App\Service\GuidelineBreachPolicy::shouldRemoveFromDisplay($datarecord)): ?>
+                                        <span style="color:#c0392b;font-weight:600;">Removed</span>
+                                    <?php elseif ($breachLevel === 'extreme' && (int)$datarecord->guideline_breach === 1): ?>
+                                        <span style="color:#777;">Team decision pending</span>
+                                    <?php else: ?>
+                                        —
+                                    <?php endif; ?>
+                                </td>
                                 <td data-title="Action">
                                     <?php if($datarecord->guideline_breach == 1): ?>
-                                        <?php echo $this->Html->link('<i class="fa fa-check"></i>', ['controller' => 'eventsubmissions', 'action' => 'approveguidelinebreach', $datarecord->slug], ['escape' => false, 'title' => 'Approve', 'class' => 'btn btn-success btn-xs', 'confirm' => 'Are you sure you want to approve this guideline breach?']); ?>
-                                        <?php echo ' '.$this->Html->link('<i class="fa fa-times"></i>', ['controller' => 'eventsubmissions', 'action' => 'rejectguidelinebreach', $datarecord->slug], ['escape' => false, 'title' => 'Reject', 'class' => 'btn btn-danger btn-xs', 'confirm' => 'Are you sure you want to reject this guideline breach?']); ?>
-                                    <?php elseif($datarecord->guideline_breach == 2): ?>
-                                        <?php echo $this->Html->link('<i class="fa fa-trash"></i>', ['controller' => 'eventsubmissions', 'action' => 'deleteguidelinebreach', $datarecord->slug], ['escape' => false, 'title' => 'Delete', 'class' => 'btn btn-danger btn-xs', 'confirm' => 'Are you sure you want to delete this guideline breach?']); ?>
+                                        <?php
+                                        $breachLevelRanks = ['minor' => 1, 'major' => 2, 'extreme' => 3];
+                                        $currentLevelRank = $breachLevelRanks[$breachLevel] ?? 4;
+                                        $reviewLevelOptions = array_filter(
+                                            ['minor' => 'Minor', 'major' => 'Major', 'extreme' => 'Extreme'],
+                                            static fn($key) => !isset($breachLevelRanks[$breachLevel]) || $breachLevelRanks[$key] <= $currentLevelRank,
+                                            ARRAY_FILTER_USE_KEY
+                                        );
+                                        echo $this->Form->create(null, [
+                                            'url' => ['controller' => 'eventsubmissions', 'action' => 'reviewguidelinebreach', $datarecord->slug],
+                                            'type' => 'post',
+                                            'style' => 'min-width:190px;',
+                                        ]);
+                                        echo $this->Form->select('guideline_breach_level', $reviewLevelOptions, [
+                                            'value' => $breachLevel,
+                                            'empty' => 'Select level',
+                                            'class' => 'form-control input-sm',
+                                            'required' => true,
+                                        ]);
+                                        echo $this->Form->textarea('guideline_breach_team_response', [
+                                            'value' => (string)($datarecord->guideline_breach_team_response ?? ''),
+                                            'rows' => 2,
+                                            'class' => 'form-control input-sm',
+                                            'placeholder' => 'Optional response to judge',
+                                            'style' => 'margin-top:5px;',
+                                        ]);
+                                        if ($breachLevel === 'extreme') {
+                                            echo '<label style="display:block;margin:5px 0;font-weight:normal;">';
+                                            echo $this->Form->checkbox('guideline_breach_display_removed', [
+                                                'value' => 1,
+                                                'checked' => (int)($datarecord->guideline_breach_display_removed ?? 0) === 1,
+                                            ]);
+                                            echo ' Remove from public display</label>';
+                                        }
+                                        echo $this->Form->button('Accept', [
+                                            'name' => 'decision',
+                                            'value' => 'accept',
+                                            'class' => 'btn btn-success btn-xs',
+                                            'onclick' => "return confirm('Accept this breach and apply its tier restrictions?');",
+                                        ]);
+                                        echo ' '.$this->Form->button('Reject', [
+                                            'name' => 'decision',
+                                            'value' => 'reject',
+                                            'class' => 'btn btn-danger btn-xs',
+                                            'onclick' => "return confirm('Reject this breach and restore eligibility?');",
+                                        ]);
+                                        echo $this->Form->end();
+                                        ?>
+                                    <?php elseif(in_array((int)$datarecord->guideline_breach, [2, 3], true)): ?>
+                                        <?php echo $this->Form->postLink('<i class="fa fa-trash"></i>', ['controller' => 'eventsubmissions', 'action' => 'deleteguidelinebreach', $datarecord->slug], ['escape' => false, 'title' => 'Clear breach', 'class' => 'btn btn-danger btn-xs', 'confirm' => 'Are you sure you want to clear this guideline breach?']); ?>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -125,7 +199,6 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
                 <span style="font-weight:600;">Total entries: <?php echo number_format($totalEntries); ?></span>
             </div>
         </section>
-        <?php echo $this->Form->end(); ?>
     </div>
 
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">

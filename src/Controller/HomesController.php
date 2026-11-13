@@ -8,6 +8,7 @@ use Cake\Core\Configure;
 use Cake\Core\Configure\Engine\PhpConfig;
 use App\Utility\LegacyEmail as Email;
 use Cake\I18n\I18n;
+use App\Service\SupervisorAssignmentPolicy;
 
 #[\AllowDynamicProperties]
 class HomesController extends AppController {
@@ -323,35 +324,11 @@ class HomesController extends AppController {
                 $resultUT = $this->Users->save($dataUT);
                 
                 
-                // now send email to this teacher to verify account and set password
-                $emailId                 = $resultUT->email_address;
-                $teacher_name             = $resultUT->first_name;
-                
-                $school_name             = $schoolD->first_name;
-                
-                $emailtemplateMessage = $this->Emailtemplates->find()->where(['Emailtemplates.id' => '4'])->first();
-
-                $link = HTTP_PATH . "/homes/teacherverifyaccount/" . $resultUT->slug . "/" . md5($resultUT->slug) . "/" . md5($resultUT->id);
-                //$sitelink = '<a style="color:#000; text-decoration: underline;" href="mailto:' . MAIL_FROM . '">' . MAIL_FROM . '</a>';
-                
-                $toRepArray     = array('[!teacher_name!]','[!school_name!]','[!teacher_email_address!]','[!LINK!]','[!customer_code!]');
-                $fromRepArray     = array($teacher_name,$school_name,$emailId,$link,$schoolD->customer_code);
-                
-                $subjectToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['subject']);
-                $messageToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['template']);
-                
-                //echo $messageToSend;exit;
-                
-                $email = new Email();
-                $email->setTemplate('default')
-                            ->setLayout('admintemplate')
-                    ->setEmailFormat('html')
-                    ->setTo($emailId)
-                    //->setCc(HEADERS_CC)
-                    ->setFrom([HEADERS_FROM_EMAIL => HEADERS_FROM_NAME])
-                    ->setSubject($subjectToSend)
-                    ->setViewVars(['content_for_layout' => $messageToSend])
-                    ->send();
+                if (!$resultUT) {
+                    $this->Flash->error('The supervisor account could not be created. Please contact the events team.');
+                    return $this->redirect(['controller' => 'homes', 'action' => 'index']);
+                }
+                $this->Flash->error('Supervisor account setup is temporarily unavailable; no invitation was sent. Please contact the events team.');
                 
                 // confirm school account
                 $this->Users->updateAll(['activation_status' => 1,'modified' => date('Y-m-d H:i:s')], ["id" => $conventionRegD->user_id]);
@@ -394,23 +371,8 @@ class HomesController extends AppController {
     
     
     public function teacherverifyaccount($teacher_slug=null,$md5_teacher_slug=null,$md5_teacher_id=null) {
-        
-        // now check values received when link is clicked
-        // to get conv reg details
-        $teacherD = $this->Users->find()->where(['Users.slug' => $teacher_slug,'Users.activation_status' => 0,'Users.status' => 0])->first();
-        if(md5($teacherD->id) == $md5_teacher_id && md5($teacher_slug) == $md5_teacher_slug)
-        {    
-            // verify teacher account
-            $this->Users->updateAll(['activation_status' => 1,'status' => 1,'modified' => date('Y-m-d H:i:s')], ["id" => $teacherD->id]);
-            $this->redirect(['controller' => 'users', 'action' => 'teachersetpassword',$teacherD->email_address,md5($teacherD->email_address),$teacherD->id,md5($teacherD->id)]);
-            
-            $this->Flash->success('Account verified successfully. Please set your passwords.');
-        }
-        else
-        {
-            $this->Flash->error('Invalid verification link.');
-            $this->redirect(['controller' => 'homes', 'action' => 'index']);
-        }
+        $this->Flash->error('Supervisor account setup is temporarily unavailable. Please contact the events team.');
+        return $this->redirect(['controller' => 'users', 'action' => 'login']);
     }
     
     public function headerconvddfrmsubmit() {
@@ -435,7 +397,8 @@ class HomesController extends AppController {
                 {
                     $user_id = $this->request->getSession()->read("user_id");
                     $userD = $this->Users->find()->where(['Users.id' => $user_id])->first();
-                    $convRegD = $this->Conventionregistrations->find()->where(['Conventionregistrations.convention_id' => $convention_id,'Conventionregistrations.user_id' => $userD->school_id,'Conventionregistrations.season_id' => $season_id])->first();
+                    $ownerId = $this->request->getSession()->read('current_session_profile_type') === 'Judge' ? $user_id : $userD->school_id;
+                    $convRegD = $this->Conventionregistrations->find()->where(['Conventionregistrations.convention_id' => $convention_id,'Conventionregistrations.user_id' => $ownerId,'Conventionregistrations.season_id' => $season_id])->first();
                 }
                 
                 if ($this->request->getSession()->read("user_type") == "Judge")
@@ -484,14 +447,58 @@ class HomesController extends AppController {
     
     public function assignteachertostudent($crs_slug=null,$teacher_id=null)
     {
-        $sess_selected_convention_registration_id = $this->request->getSession()->read("sess_selected_convention_registration_id");
-        if($sess_selected_convention_registration_id>0)
-        {
-            // update teacher_parent_id for this student
-            $this->Conventionregistrationstudents->updateAll(['teacher_parent_id' => $teacher_id], ["slug" => $crs_slug, 'conventionregistration_id' => $sess_selected_convention_registration_id]);
-            echo 'Supervisor assigned successfully.';
-            exit;
+        $this->request->allowMethod(['post']);
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $this->getResponse()->withStatus(401)->withStringBody('Please log in again.');
         }
+        $schoolId = (int)$this->request->getSession()->read('user_id');
+        $school = $this->Users->find()->where(['Users.id' => $schoolId, 'Users.user_type' => 'School'])->first();
+        $registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+        $teacherId = (int)$teacher_id;
+        if (!$school || $this->request->getSession()->read('user_type') !== 'School' || $registrationId <= 0 || $teacherId <= 0) {
+            return $this->getResponse()->withStatus(403)->withStringBody('School registration access required.');
+        }
+        $registration = $this->Conventionregistrations->find()->where([
+            'Conventionregistrations.id' => $registrationId,
+            'Conventionregistrations.user_id' => $schoolId,
+        ])->first();
+        $teachers = $this->fetchTable('Conventionregistrationteachers');
+        $teacher = $teachers->find()->where([
+            'Conventionregistrationteachers.conventionregistration_id' => $registrationId,
+            'Conventionregistrationteachers.user_id' => $schoolId,
+            'Conventionregistrationteachers.teacher_id' => $teacherId,
+            'Conventionregistrationteachers.status' => 1,
+        ])->first();
+        if (!$registration || !$teacher) {
+            return $this->getResponse()->withStatus(403)->withStringBody('Choose a supervisor registered for this school and convention.');
+        }
+        $connection = $this->Conventionregistrationstudents->getConnection();
+        try {
+            $connection->transactional(function () use ($connection, $schoolId, $registrationId, $teacherId, $crs_slug) {
+                $row = $connection->execute(
+                    'SELECT * FROM conventionregistrationstudents WHERE slug = ? AND conventionregistration_id = ? AND user_id = ? AND status = 1 FOR UPDATE',
+                    [$crs_slug, $registrationId, $schoolId]
+                )->fetch('assoc');
+                if (!$row) {
+                    throw new \DomainException('The active student registration could not be found.');
+                }
+                if ((new \App\Service\CrossSchoolSponsorship($connection))->hasPending([(int)$row['id']])) {
+                    throw new \DomainException('Cancel the pending cross-school request before assigning a supervisor.');
+                }
+                $policy = new SupervisorAssignmentPolicy($connection);
+                $excluded = (int)$row['teacher_parent_id'] === $teacherId ? [(int)$row['id']] : [];
+                $policy->assign($teacherId, (int)$row['convention_id'], (int)$row['season_id'], (int)$row['season_year'],
+                    [(int)$row['student_id']], $excluded, function () use ($row, $teacherId) {
+                        $studentRecord = $this->Conventionregistrationstudents->get($row['id']);
+                        $studentRecord->teacher_parent_id = $teacherId;
+                        $this->Conventionregistrationstudents->saveOrFail($studentRecord);
+                    });
+            });
+        } catch (\DomainException $error) {
+            return $this->getResponse()->withStatus(422)->withStringBody($error->getMessage());
+        }
+        return $this->getResponse()->withHeader('Cache-Control', 'no-store')->withStringBody('Supervisor assigned successfully.');
     }
     
     public function eventsubmissions($event_id=null)

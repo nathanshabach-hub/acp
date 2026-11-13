@@ -107,7 +107,7 @@ class TransactionsController extends AppController {
 		$this->set('totalStudentsReg', $totalStudentsReg);
 		
 		// now calculate for how many students already paid for
-		$alreadyPaidStudents = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $sess_selected_convention_registration_id])->count();
+		$alreadyPaidStudents = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $sess_selected_convention_registration_id, 'OR' => ['Transactionstudents.status !=' => 4, 'Transactionstudents.status IS' => null]])->count();
 		$this->set('alreadyPaidStudents', $alreadyPaidStudents);
 		
 		// now calculate
@@ -144,7 +144,7 @@ class TransactionsController extends AppController {
 						if(!in_array($convregdisc->student_id,(array)$studentApplicableForDiscount))
 						{
 							// to check if this student already get discount benefit or not
-							$checkStDiscount = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $CRDetails->id, 'Transactionstudents.conventionregistrationstudent_id' => $convregdisc->id, 'Transactionstudents.student_id' => $convregdisc->student_id])->first();
+							$checkStDiscount = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $CRDetails->id, 'Transactionstudents.conventionregistrationstudent_id' => $convregdisc->id, 'Transactionstudents.student_id' => $convregdisc->student_id, 'OR' => ['Transactionstudents.status !=' => 4, 'Transactionstudents.status IS' => null]])->first();
 							
 							if(!$checkStDiscount)
 							{
@@ -193,7 +193,7 @@ class TransactionsController extends AppController {
 		$this->set('totalTeachersReg', $totalTeachersReg);
 		
 		// now calculate for how many teachers already paid for
-		$alreadyPaidTeachers = $this->Transactionteachers->find()->where(['Transactionteachers.conventionregistration_id' => $sess_selected_convention_registration_id])->count();
+		$alreadyPaidTeachers = $this->Transactionteachers->find()->where(['Transactionteachers.conventionregistration_id' => $sess_selected_convention_registration_id, 'OR' => ['Transactionteachers.status !=' => 4, 'Transactionteachers.status IS' => null]])->count();
 		$this->set('alreadyPaidTeachers', $alreadyPaidTeachers);
 		
 		// now calculate
@@ -280,7 +280,7 @@ class TransactionsController extends AppController {
 			foreach($allStudentsReg as $allst)
 			{
 				// to check if amount paid for this student or not
-				$checkStudentF = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $sess_selected_convention_registration_id,'Transactionstudents.student_id' => $allst->student_id])->first();
+				$checkStudentF = $this->Transactionstudents->find()->where(['Transactionstudents.conventionregistration_id' => $sess_selected_convention_registration_id,'Transactionstudents.student_id' => $allst->student_id, 'OR' => ['Transactionstudents.status !=' => 4, 'Transactionstudents.status IS' => null]])->first();
 				if(!$checkStudentF)
 				{
 					$applicableForDiscount 		= 0;
@@ -335,7 +335,7 @@ class TransactionsController extends AppController {
 			foreach($allTeachersReg as $alltea)
 			{
 				// to check if amount paid for this teacher or not
-				$checkTeacherF = $this->Transactionteachers->find()->where(['Transactionteachers.conventionregistration_id' => $sess_selected_convention_registration_id,'Transactionteachers.teacher_id' => $alltea->teacher_id])->first();
+				$checkTeacherF = $this->Transactionteachers->find()->where(['Transactionteachers.conventionregistration_id' => $sess_selected_convention_registration_id,'Transactionteachers.teacher_id' => $alltea->teacher_id, 'OR' => ['Transactionteachers.status !=' => 4, 'Transactionteachers.status IS' => null]])->first();
 				if(!$checkTeacherF)
 				{
 					// add new record to Transactionteachers table
@@ -402,6 +402,9 @@ class TransactionsController extends AppController {
 		
 		// to get admin details
 		$settingsInfo = $this->getSettingsInfo();
+		if (Configure::read('Environment.name') === 'demo') {
+			$settingsInfo->paypal_email = Configure::read('Payments.sandboxEmail');
+		}
 		
 		if($this->request->getSession()->read("sess_selected_convention_registration_id")>0)
 		{
@@ -417,7 +420,7 @@ class TransactionsController extends AppController {
 		
 		//$this->prx($bookingInfo);
 		
-        if(empty($transactionInfo))
+        if(empty($transactionInfo) || (int)$transactionInfo->status === 4)
 		{
             $this->Flash->error('Invalid transaction information.');
 			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'students']);
@@ -481,6 +484,7 @@ class TransactionsController extends AppController {
 	public function paymentsuccess($transaction_slug=null){
 		$requestData = $this->request->getData() + $this->request->getQueryParams();
 
+		$isDemo = Configure::read('Environment.name') === 'demo';
 		if($transaction_slug)
 		{
 			$transactionD = $this->Transactions->find()
@@ -490,16 +494,19 @@ class TransactionsController extends AppController {
 
 			if($transactionD)
 			{
-				$paymentStatusReceived = $requestData['payment_status'] ?? null;
 				$itemNumber = $requestData['item_number'] ?? null;
 
 				if($transaction_slug == $itemNumber)
 				{
-					$this->Transactions->updateAll([
-						'transaction_data' => json_encode($requestData),
-						'modified' => date('Y-m-d H:i:s'),
-					], ["slug" => $transaction_slug]);
-					$this->Flash->success("Your payment confirmed successfully. You will receive confirmation email shortly.");
+					if ($isDemo) {
+						$this->Flash->success("Payment return received. The verified PayPal Sandbox notification will update the transaction.");
+					} else {
+						$this->Transactions->updateAll([
+							'transaction_data' => json_encode($requestData),
+							'modified' => date('Y-m-d H:i:s'),
+						], ["slug" => $transaction_slug, 'status !=' => 4]);
+						$this->Flash->success("Your payment confirmed successfully. You will receive confirmation email shortly.");
+					}
 				}
 				else
 				{
@@ -544,7 +551,7 @@ class TransactionsController extends AppController {
 	}
 
 	public function inpnotify(){
-		$debug = true;
+		$debug = false;
 		$useSandbox = true;
 		$logFile = 'ipn.log';
 		$requestData = $this->request->getData();
@@ -665,16 +672,32 @@ class TransactionsController extends AppController {
 					->send();
 
 				$transactionD = $this->Transactions->find()->where(['Transactions.slug' => $transactionSlug])->contain(['Conventions','Users'])->first();
-				if ($transactionD) {
-					$this->Transactions->updateAll([
-						'status' => '1',
-						'modified' => date("Y-m-d H:i:s"),
-						'transaction_id_received' => (string)$txnId,
-						'transaction_data' => $rawPostData,
-					], ["id" => $transactionD->id]);
-
-					$this->Transactionstudents->updateAll(['status' => '1', 'modified' => date("Y-m-d H:i:s")], ["transaction_id" => $transactionD->id]);
-					$this->Transactionteachers->updateAll(['status' => '1', 'modified' => date("Y-m-d H:i:s")], ["transaction_id" => $transactionD->id]);
+				$isDemoPaymentValid = true;
+				if (Configure::read('Environment.name') === 'demo') {
+					$expectedReceiver = strtolower((string)Configure::read('Payments.sandboxEmail'));
+					$actualReceiver = strtolower(trim((string)($requestData['receiver_email'] ?? '')));
+					$receivedAmount = $requestData['mc_gross'] ?? null;
+					$expectedAmount = $transactionD ? (string)$transactionD->final_amount_paid : '';
+					$validAmount = is_string($receivedAmount) || is_int($receivedAmount) || is_float($receivedAmount);
+					$actualAmount = $validAmount ? (string)$receivedAmount : '';
+					$amountPattern = '/\A\d+(?:\.\d{1,2})?\z/D';
+					$validAmount = preg_match($amountPattern, $expectedAmount) === 1
+						&& preg_match($amountPattern, $actualAmount) === 1;
+					if ($validAmount) {
+						$expectedAmount = number_format((float)$expectedAmount, 2, '.', '');
+						$actualAmount = number_format((float)$actualAmount, 2, '.', '');
+					}
+					$isDemoPaymentValid = $transactionD !== null
+						&& $expectedReceiver !== ''
+						&& hash_equals($expectedReceiver, $actualReceiver)
+						&& ($requestData['mc_currency'] ?? null) === 'AUD'
+						&& $validAmount
+						&& hash_equals($expectedAmount, $actualAmount)
+						&& !empty($txnId);
+				}
+				if ($transactionD && $isDemoPaymentValid && (new \App\Service\TransactionCancellation($this->Transactions->getConnection()))->confirm(
+                    (int)$transactionD->id, (string)$txnId, $rawPostData
+                )) {
 
 					$emailId = $transactionD->Users['email_address'];
 					$emailtemplateMessage = $this->Emailtemplates->find()->where(['Emailtemplates.id' => '5'])->first();
@@ -730,6 +753,10 @@ class TransactionsController extends AppController {
 			
 			if($transactionD)
 			{
+                if ((int)$transactionD->status === 4) {
+                    $this->Flash->error('This request is already cancelled. Its history has been retained.');
+                    return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+                }
 				$this->Transactions->deleteAll(["slug" => $transaction_slug]);
 				$this->Transactionstudents->deleteAll(["transaction_id" => $transactionD->id]);
 				$this->Transactionteachers->deleteAll(["transaction_id" => $transactionD->id]);
@@ -755,6 +782,10 @@ class TransactionsController extends AppController {
 			$transactionD 		= $this->Transactions->find()->where(['Transactions.slug' => $transaction_slug])->contain(["Conventions","Users","Seasons"])->first();
 			if($transactionD)
 			{
+                if ((int)$transactionD->status === 4) {
+                    $this->Flash->error('This request is cancelled. Please submit a new request from Payment Summary.');
+                    return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+                }
 				//$this->prx($transactionD);
 				
 				/* EMAIL CODE STARTED */
@@ -862,6 +893,9 @@ class TransactionsController extends AppController {
 		$condition[] = "(Transactions.user_id = '".$user_id."')";
 
         if ($this->request->is('post')) {
+            if ($this->request->getData('action')) {
+                throw new \Cake\Http\Exception\ForbiddenException('Payment records can only be confirmed or cancelled by an administrator.');
+            }
             if (isset($this->request->getData()['action'])) {
                 $idList = implode(',', $this->request->getData()['chkRecordId']);
                 $action = $this->request->getData()['action'];
@@ -924,8 +958,14 @@ class TransactionsController extends AppController {
 	
 	public function viewdetails($slug = null) {
 		
-		$this->userLoginCheck();
-		$this->schoolAdminLoginCheck();
+		$loginCheck = $this->userLoginCheck();
+		if ($loginCheck !== true) {
+			return $loginCheck;
+		}
+		if ($this->request->getSession()->read('user_type') !== 'School') {
+			$this->Flash->error('Un-authorize access.');
+			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+		}
 		
 		//echo ' fsdf sdf sdf d';exit;
 		$this->viewBuilder()->setLayout("home");
@@ -950,7 +990,10 @@ class TransactionsController extends AppController {
 		
 		if ($slug)
 		{
-            $transactionD = $this->Transactions->find()->where(['Transactions.slug' => $slug])->contain(['Conventions','Users'])->first();
+            $transactionD = $this->Transactions->find()->where([
+				'Transactions.slug' => $slug,
+				'Transactions.user_id' => $user_id,
+			])->contain(['Conventions','Users'])->first();
 			$this->set('transactionD', $transactionD);
             
 			if($transactionD)
@@ -966,13 +1009,13 @@ class TransactionsController extends AppController {
 			else
 			{
 				$this->Flash->error('Transaction not found.');
-				$this->redirect(['controller' => 'transactions', 'action' => 'index']);
+				return $this->redirect(['controller' => 'transactions', 'action' => 'mytransactions']);
 			}
         }
 		else
 		{
 			$this->Flash->error('Invalid transaction.');
-			$this->redirect(['controller' => 'transactions', 'action' => 'index']);
+			return $this->redirect(['controller' => 'transactions', 'action' => 'mytransactions']);
 		}
 		
     }

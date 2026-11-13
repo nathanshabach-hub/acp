@@ -22,7 +22,7 @@
                     <thead class="cf ajshort">
                         <tr>
                             <th class="sorting_paging">Convention</th>
-                            <th class="sorting_paging">School</th>
+                            <th class="sorting_paging">School / Judge</th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('season_year', 'Season Year'); ?></th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('price_structure', 'Price Structure'); ?></th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('total_amount', 'Amount'); ?></th>
@@ -37,7 +37,7 @@
                             <?php //pr($datarecord); exit;?> 
                             <tr>
                                 <td data-title="Convention"><?php echo $datarecord->Conventions['name'];?></td>
-                                <td data-title="School"><?php echo $datarecord->Users['first_name'];?></td>
+                                <td data-title="School / Judge"><?= h($datarecord->Users['user_type'] === 'Judge' ? trim($datarecord->Users['first_name'] . ' ' . $datarecord->Users['last_name']) : $datarecord->Users['first_name']) ?></td>
 								<td data-title="Season Year"><?php echo $datarecord->season_year; ?></td>
 								<td data-title="Price Structure"><?php echo $priceStructureCR[$datarecord->price_structure]; ?></td>
 								<td data-title="Amount"><?php echo CURR.' '.number_format($datarecord->total_amount,2); ?></td>
@@ -48,6 +48,12 @@
                                 <td data-title="Action">
                                     
                                     <?php echo $this->Html->link('<i class="fa fa-eye"></i>', ['controller' => 'transactions', 'action' => 'viewdetails',$datarecord->slug], [ 'escape' => false, 'title' => 'View Details', 'class'=>'btn btn-primary btn-xs']); ?>
+                                    <?php if (in_array((int)$datarecord->status, [0, 2, 3], true) && trim((string)$datarecord->transaction_id_received) === ''): ?>
+                                        <?= $this->Html->link('Cancel request', ['action' => 'cancelrequest', $datarecord->slug], ['class' => 'btn btn-danger btn-xs', 'title' => 'Cancel unpaid request']) ?>
+                                    <?php endif; ?>
+                                    <?php if ((int)$datarecord->status === 1): ?>
+                                        <?= $this->Html->link('Delete confirmed', ['action' => 'deleteconfirmed', $datarecord->slug], ['class' => 'btn btn-danger btn-xs', 'title' => 'Permanently delete confirmed transaction']) ?>
+                                    <?php endif; ?>
 									
                                     <?php //echo $this->Html->link('<i class="fa fa-trash-o"></i>', ['controller' => 'transactions', 'action' => 'deletedivision',$datarecord->slug], [ 'escape' => false, 'title' => 'Delete', 'class'=>'btn btn-danger btn-xs action-list delete-list', 'confirm' => 'Are you sure you want to Delete ?']); ?>
                                 </td>

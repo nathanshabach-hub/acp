@@ -277,10 +277,33 @@ $forceTimeValuesJson = json_encode([
 					<div class="form-group">
 					  <label class="col-sm-2 control-label">Distribution</label>
 					  <div class="col-sm-10">
-							<?php echo $this->Form->checkbox('Schedulings.round_robin_day_distribution_yes_no', ['value'=>'1','id'=>'round_robin_day_distribution_yes_no']); ?>
-							Enable day-by-day round robin distribution (rotate slots across convention days)
+							<?php if (!empty($hasStrategyColumn)) { ?>
+								<?php echo $this->Form->select('Schedulings.schedule_band_mode', $dayStrategyOptions, ['id'=>'schedule_band_mode','class'=>'form-control','style'=>'max-width:320px;','value' => \App\Scheduling\DayStrategy::normalise($schedulingD->schedule_band_mode ?? null, !empty($schedulingD->round_robin_day_distribution_yes_no))]); ?>
+								<p class="help-block">
+									<strong>Earliest Available</strong>: fill the earliest valid slots first.
+									<strong>Balanced Days</strong>: spread room workload across the days while keeping events compact.
+									<strong>Round-Robin Days</strong>: start successive events on successive days.
+									All options keep the same student, room, break and knockout rules.
+								</p>
+							<?php } elseif (!empty($hasRoundRobinColumn)) { ?>
+								<?php echo $this->Form->checkbox('Schedulings.round_robin_day_distribution_yes_no', ['value'=>'1','id'=>'round_robin_day_distribution_yes_no','checked' => !empty($schedulingD->round_robin_day_distribution_yes_no)]); ?>
+								Enable day-by-day round robin distribution (rotate slots across convention days)
+							<?php } else { ?>
+								<span class="text-muted">Round-robin day distribution is unavailable because the database column is missing.</span>
+							<?php } ?>
 					  </div>
 					</div>
+					<?php if (!empty($hasSeedColumn)) { ?>
+					<div class="form-group">
+					  <label class="col-sm-2 control-label">Scheduling Seed</label>
+					  <div class="col-sm-10">
+							<?php echo $this->Form->input('Schedulings.schedule_seed', ['id'=>'schedule_seed', 'label'=>false, 'type'=>'number', 'div'=>false, 'class'=>'form-control', 'placeholder'=>'Optional integer seed']); ?>
+							<p class="help-block">Optional. Leave blank for a new random seed each run. Reuse a value to reproduce the same shuffle.
+								<?php if ($lastRunSeed !== null) { ?> Last run used seed <strong><?php echo h($lastRunSeed); ?></strong>.<?php } ?>
+							</p>
+					  </div>
+					</div>
+					<?php } ?>
 					<!-- Convention Days Ends -->
 					
 					

@@ -2063,6 +2063,81 @@ body {
     color: #fff;
 }
 
+/* Events page specific polish */
+.admin-events-page .admin_search {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.admin-events-page .admin_search form {
+    flex: 1 1 760px;
+}
+
+.admin-events-page .search_frm {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    float: none;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+}
+
+.admin-events-page .search_frm .hints {
+    min-width: 130px;
+}
+
+.admin-events-page .search_frm .hint--keyword {
+    flex: 1 1 280px;
+    min-width: 260px;
+}
+
+.admin-events-page .search_frm .hint--division {
+    flex: 1 1 240px;
+    min-width: 220px;
+}
+
+.admin-events-page .search_frm .hint--division .select2-container {
+    min-width: 220px;
+    width: 100% !important;
+}
+
+.admin-events-page .admin_asearch {
+    align-items: center;
+    display: inline-flex;
+    gap: 8px;
+    margin-left: 4px;
+}
+
+.admin-events-page .add_new_record {
+    display: flex;
+    flex-wrap: wrap;
+    float: none;
+    gap: 8px;
+    margin-left: auto;
+    padding-right: 0;
+    position: static;
+}
+
+.admin-events-page .add_new_record .btn {
+    background: #184e7a;
+    border: 1px solid #184e7a;
+    border-radius: 10px;
+    color: #fff;
+    font-weight: 700;
+    padding: 8px 12px;
+}
+
+.admin-events-page .add_new_record .btn:hover,
+.admin-events-page .add_new_record .btn:focus {
+    background: #123e61;
+    border-color: #123e61;
+    color: #fff;
+}
+
 .admin-rooms-page .table thead th a,
 .admin-rooms-page .table thead th a:hover,
 .admin-rooms-page .table thead th a:focus {
@@ -2090,6 +2165,100 @@ body {
     text-align: center;
 }
 
+.admin-rooms-page .rooms-help-text {
+    color: #355577;
+    margin-bottom: 14px;
+}
+
+.admin-rooms-page .rooms-toolbar {
+    align-items: center;
+    background: #f7fbff;
+    border: 1px solid #dbe8f5;
+    border-radius: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+}
+
+.admin-rooms-page .rooms-toolbar-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.admin-rooms-page .rooms-toolbar-search {
+    flex: 1 1 260px;
+    max-width: 360px;
+    min-width: 220px;
+}
+
+.admin-rooms-page .rooms-toolbar-count {
+    color: #1f4e79;
+    font-weight: 700;
+}
+
+.admin-rooms-page .rooms-checkbox-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.admin-rooms-page .room-checkbox-item {
+    background: #fff;
+    border: 1px solid #dce7f2;
+    border-radius: 10px;
+    margin: 0;
+    min-height: 54px;
+    padding: 8px 10px;
+}
+
+.admin-rooms-page .room-checkbox-item:hover {
+    border-color: #b7cfe8;
+    box-shadow: 0 2px 6px rgba(18, 62, 97, 0.08);
+}
+
+.admin-rooms-page .room-checkbox-item--locked {
+    background: #f4f8fd;
+    border-color: #c5d6ea;
+}
+
+.admin-rooms-page .room-checkbox-label {
+    align-items: flex-start;
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    width: 100%;
+}
+
+.admin-rooms-page .room-checkbox-label input[type="checkbox"] {
+    margin-top: 3px;
+}
+
+.admin-rooms-page .room-description {
+    color: #5a6f84;
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.admin-rooms-page .room-lock-tag {
+    background: #ffecc6;
+    border: 1px solid #f0d18f;
+    border-radius: 999px;
+    color: #7a5a1f;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: auto;
+    padding: 1px 8px;
+    text-transform: uppercase;
+}
+
+.admin-rooms-page .rooms-lock-note {
+    margin-bottom: 12px;
+}
+
 @media (max-width: 991px) {
     .admin-rooms-page .admin_search {
         align-items: stretch;
@@ -2113,6 +2282,18 @@ body {
     .admin-rooms-page .search_frm .hints,
     .admin-rooms-page .search_frm .list_sel {
         min-width: 100%;
+    }
+
+    .admin-rooms-page .rooms-toolbar-search {
+        max-width: 100%;
+    }
+
+    .admin-rooms-page .rooms-toolbar-count {
+        width: 100%;
+    }
+
+    .admin-rooms-page .rooms-checkbox-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -4179,5 +4360,126 @@ body {
     .admin-transaction-details-page .form-horizontal[style*="padding-bottom"] {
         padding-left: 12px !important;
         padding-right: 12px !important;
+    }
+}
+
+/* Schedule category: live Start Scheduling progress */
+.admin-sched-progress {
+    margin: 0 0 18px;
+    padding: 16px 18px;
+    border: 1px solid #d6e4f0;
+    border-radius: 10px;
+    background: #f5f9fc;
+}
+
+.admin-sched-progress[hidden] {
+    display: none;
+}
+
+.admin-sched-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    color: #1f3a5a;
+}
+
+.admin-sched-progress-head span {
+    font-variant-numeric: tabular-nums;
+    color: #5b6b7d;
+}
+
+.admin-sched-progress-track {
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #dfe7ef;
+}
+
+.admin-sched-progress-bar {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #16a34a, #8cc63f);
+    background-size: 200% 100%;
+    animation: admin-sched-progress-flow 1.4s linear infinite;
+    transition: width 0.4s ease;
+}
+
+@keyframes admin-sched-progress-flow {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+}
+
+.admin-sched-progress-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-sched-progress-steps li {
+    padding: 5px 12px;
+    border: 1px solid #d6e0ea;
+    border-radius: 999px;
+    background: #fff;
+    color: #6b7a8c;
+    font-size: 13px;
+}
+
+.admin-sched-progress-steps li.is-active {
+    border-color: #16a34a;
+    color: #166534;
+    font-weight: 600;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+.admin-sched-progress-steps li.is-done {
+    border-color: #16a34a;
+    background: #16a34a;
+    color: #fff;
+}
+
+.admin-sched-progress-steps li.is-done::before {
+    content: "\2713  ";
+}
+
+.admin-sched-progress-note {
+    margin: 12px 0 0;
+    color: #5b6b7d;
+    font-size: 13px;
+}
+
+.admin-sched-progress.is-error {
+    border-color: #f1b8b8;
+    background: #fff5f5;
+}
+
+.admin-sched-progress.is-error .admin-sched-progress-head strong {
+    color: #b42318;
+}
+
+.admin-sched-progress.is-error .admin-sched-progress-bar {
+    animation: none;
+    background: #e5484d;
+}
+
+.admin-sched-category-table tr.admin-sched-row-active td {
+    background: #ecfdf3;
+}
+
+.admin-sched-category-table tr.admin-sched-row-done td:first-child::after {
+    content: " \2713";
+    color: #16a34a;
+    font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-sched-progress-bar {
+        animation: none;
+        transition: none;
     }
 }

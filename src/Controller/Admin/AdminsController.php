@@ -16,15 +16,6 @@ class AdminsController extends AppController {
     public function initialize(): void {
         parent::initialize();
         $this->loadComponent('Flash');
-        $action = $this->request->getParam('action');
-        
-        // Updated to use getSession()
-        $loggedAdminId = $this->request->getSession()->read('admin_id');
-        if ($action != 'forgotPassword' && $action != 'logout') { // check admin login session, direct to admin login if session not active
-            if (!$loggedAdminId && $action != "login" && $action != 'captcha') {
-                $this->redirect(['action' => 'login']);
-            }
-        }
 		
         $this->Emailtemplates = $this->loadModel('Emailtemplates');
         $this->Users = $this->loadModel('Users');
@@ -49,6 +40,7 @@ class AdminsController extends AppController {
     public function login() {
         $this->set('title', ADMIN_TITLE . 'Admin Login');
         $this->viewBuilder()->setLayout('admin_login');
+        $this->expireLegacyAdminPasswordCookie();
 
         // Updated to use getSession()
         $loggedAdminId = $this->request->getSession()->read('admin_id');
@@ -76,11 +68,9 @@ class AdminsController extends AppController {
                     } elseif (crypt($password, $adminInfo->password) == $adminInfo->password) {
 
                         if ($this->request->getData('Admins.remember') !== null && $this->request->getData('Admins.remember') == '1') {
-                            setcookie("admin_username", $userName, time() + 60 * 60 * 24 * 100, "/");
-                            setcookie("admin_password", $password, time() + 60 * 60 * 24 * 100, "/");
+                            $this->setRememberedAdminUsername($userName);
                         } else {
-                            setcookie("admin_username", '', time() + 60 * 60 * 24 * 100, "/");
-                            setcookie("admin_password", '', time() + 60 * 60 * 24 * 100, "/");
+                            $this->clearRememberedAdminUsername();
                         }
 
                         // Updated to use getSession()
@@ -98,10 +88,9 @@ class AdminsController extends AppController {
                 $this->Flash->error('Please below listed errors.');
             }
         } else {
-            if (isset($_COOKIE["admin_username"]) && isset($_COOKIE["admin_password"])) {
+            if (isset($_COOKIE["admin_username"]) && $_COOKIE["admin_username"] !== '') {
                 $admin = $this->Admins->newEntity([
                     'username' => $_COOKIE["admin_username"],
-                    'password' => $_COOKIE["admin_password"],
                     'remember' => 1
                 ]);
             }
@@ -158,10 +147,61 @@ class AdminsController extends AppController {
     }
 
     public function logout() {
-        // Clear session via framework interface safely
-        $this->request->getSession()->destroy();
+        $session = $this->request->getSession();
+        $session->delete('admin_id');
+        $session->delete('admin_username');
+        $this->clearRememberedAdminUsername();
         $this->Flash->success('Logout successfully.');
-        $this->redirect(['action' => 'login']);
+        return $this->redirect(['action' => 'login']);
+    }
+
+    private function setRememberedAdminUsername(string $username): void {
+        $secureCookie = $this->isSecureRequest();
+        $options = [
+            'expires' => time() + 60 * 60 * 24 * 100,
+            'path' => '/',
+            'secure' => $secureCookie,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+        setcookie('admin_username', $username, $options);
+    }
+
+    private function clearRememberedAdminUsername(): void {
+        $secureCookie = $this->isSecureRequest();
+        $options = [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => $secureCookie,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+        setcookie('admin_username', '', $options);
+        setcookie('admin_password', '', $options);
+    }
+
+    private function expireLegacyAdminPasswordCookie(): void {
+        if (!isset($_COOKIE['admin_password'])) {
+            return;
+        }
+
+        $options = [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => $this->isSecureRequest(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+        setcookie('admin_password', '', $options);
+    }
+
+    private function isSecureRequest(): bool {
+        $https = strtolower((string)env('HTTPS'));
+        if ($https === 'on' || $https === '1') {
+            return true;
+        }
+
+        return ((string)env('SERVER_PORT')) === '443';
     }
 
     public function headerchooseconvseas() {
@@ -175,6 +215,7 @@ class AdminsController extends AppController {
             {
                 // Updated to use getSession()
                 $this->request->getSession()->write('sess_admin_header_season_id', $admin_header_season_id);
+                $this->request->getSession()->write('sess_selected_convention_id', (int)$convSD->convention_id);
 				
                 return $this->redirect(['controller' => 'conventions', 'action' => 'seasons', $convSD->Conventions['slug']]);
             }
@@ -183,6 +224,7 @@ class AdminsController extends AppController {
         {
             // Updated to use getSession()
             $this->request->getSession()->write('sess_admin_header_season_id', 0);
+            $this->request->getSession()->write('sess_selected_convention_id', 0);
         }
 		
         return $this->redirect(['action' => 'dashboard']);
@@ -192,6 +234,7 @@ class AdminsController extends AppController {
         $this->set('title', ADMIN_TITLE . 'Admin Dashboard');
         $this->viewBuilder()->setLayout('admin');
         $this->set('dashboard', '1');
+        $this->set('isDeveloperAdmin', $this->isDeveloperAdmin());
 
         $allSquad247Submissions = $this->loadSquad247Submissions();
         $this->set('total_squad247', count($allSquad247Submissions));
@@ -438,6 +481,7 @@ class AdminsController extends AppController {
     }
 
     public function stageprogramautomation() {
+        \App\Deployment\SafetyPolicy::assertIntegrationAllowed('stage_program');
         $this->set('title', ADMIN_TITLE . 'Stage Program Automation');
         $this->viewBuilder()->setLayout('admin');
         $this->set('dashboard', '1');
@@ -489,7 +533,11 @@ class AdminsController extends AppController {
         $categoryOne = (array)$this->request->getSession()->read('Scheduling.runWarnings.category1');
         $ungrouped = (int)($categoryOne['ungrouped'] ?? 0);
         $skipped = (int)($categoryOne['skipped'] ?? 0);
-        if ($ungrouped === 0 && $skipped === 0) {
+        if (!empty($categoryOne['entries'])) {
+            $warnings[] = 'Category 1 entries that need correcting by the school or admin: '.implode('; ', (array)$categoryOne['entries']).'.';
+            $ungrouped = 0;
+            $skipped = 0;
+        } elseif ($ungrouped === 0 && $skipped === 0) {
             $ungrouped = count(array_filter($scheduleExceptionItems, function ($item) {
                 return strpos((string)$item['reason'], 'Students not grouped') !== false;
             }));
@@ -663,6 +711,66 @@ class AdminsController extends AppController {
         return $exceptions;
     }
 
+    private function isDeveloperAdmin(): bool {
+        $adminId = $this->request->getSession()->read('admin_id');
+        if (!$adminId) {
+            return false;
+        }
+        return $this->Admins->find()->where([
+            'Admins.id' => $adminId,
+            'Admins.username' => 'Developer',
+            'Admins.status' => 1,
+        ])->count() === 1;
+    }
+
+    public function errorlogs() {
+        $this->request->allowMethod(['get']);
+        if (!$this->isDeveloperAdmin()) {
+            throw new \Cake\Http\Exception\ForbiddenException('Error logs are available only to the Developer account.');
+        }
+        $this->viewBuilder()->setLayout('admin');
+        $this->set('title', ADMIN_TITLE . 'Error Logs');
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'no-store'));
+        $reader = new \App\Utility\PortalErrorLogs();
+        $files = [];
+        $result = ['rows' => [], 'total' => 0, 'page' => 1, 'pages' => 1];
+        $selectedFile = '';
+        $search = $this->request->getQuery('search', '');
+        $file = $this->request->getQuery('file', '');
+        $page = $this->request->getQuery('page', '1');
+        if (!is_string($search) || !is_string($file) || !is_string($page) || !ctype_digit($page) || strlen($search) > 200) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid log search or page.');
+        }
+        try {
+            $files = $reader->files();
+            $selectedFile = $file !== '' ? $file : ($files[0] ?? '');
+            if ($selectedFile !== '') {
+                $result = $reader->read($selectedFile, $search, (int)$page);
+            }
+        } catch (\InvalidArgumentException $exception) {
+            throw new \Cake\Http\Exception\BadRequestException($exception->getMessage());
+        } catch (\RuntimeException $exception) {
+            \Cake\Log\Log::error('Developer error log viewer: ' . $exception->getMessage());
+            $this->Flash->error($exception->getMessage());
+        }
+        $this->set(compact('files', 'selectedFile', 'search', 'result'));
+    }
+
+    public function deleteerrorlogs() {
+        $this->request->allowMethod(['post']);
+        if (!$this->isDeveloperAdmin()) {
+            throw new \Cake\Http\Exception\ForbiddenException('Error logs are available only to the Developer account.');
+        }
+        try {
+            $count = (new \App\Utility\PortalErrorLogs())->clearAll();
+            $this->Flash->success('Deleted all recorded entries from ' . $count . ' portal error log file(s).');
+        } catch (\RuntimeException $exception) {
+            \Cake\Log\Log::error('Developer error log deletion: ' . $exception->getMessage());
+            $this->Flash->error('Could not clear all error logs. Some files may already have been cleared. ' . $exception->getMessage());
+        }
+        return $this->redirect(['action' => 'errorlogs']);
+    }
+
     public function squad247() {
         $this->set('title', ADMIN_TITLE . '24/7 Squad Information');
         $this->viewBuilder()->setLayout('admin');
@@ -671,6 +779,8 @@ class AdminsController extends AppController {
         $contentFile = CONFIG . 'squad247_content.json';
         $defaultData = [
             'convention_subtitle' => 'Regional Student Conventions 2025',
+            'convention_dates_message' => '',
+            'convention_dates_message_enabled' => false,
             'application_intro' => 'Southern Cross Educational Enterprises is seeking applications from A.C.E. Graduates and supporters to join the 2025 Regional Convention 24/7 Squads in the following regions:',
             'success_requirements' => [
                 'Be at least 17 years of age (if under 18 and staying on site, events team will contact parent/guardian).',
@@ -726,11 +836,14 @@ class AdminsController extends AppController {
                 if (isset($decoded['convention_subtitle'])) {
                     $squad247Data['convention_subtitle'] = trim((string)$decoded['convention_subtitle']);
                 }
-                foreach (['application_intro','important_note','applications_email','applications_deadline','page2_title','page2_description','blue_card_requirement','payment_options'] as $textKey) {
+                foreach (['convention_dates_message','application_intro','important_note','applications_email','applications_deadline','page2_title','page2_description','blue_card_requirement','payment_options'] as $textKey) {
                     if (isset($decoded[$textKey])) {
                         $squad247Data[$textKey] = trim((string)$decoded[$textKey]);
                     }
                 }
+                $squad247Data['convention_dates_message_enabled'] = array_key_exists('convention_dates_message_enabled', $decoded)
+                    ? filter_var($decoded['convention_dates_message_enabled'], FILTER_VALIDATE_BOOLEAN)
+                    : $squad247Data['convention_dates_message'] !== '';
                 foreach (['success_requirements','successful_need_to','applicant_must_provide'] as $listKey) {
                     if (isset($decoded[$listKey]) && is_array($decoded[$listKey])) {
                         $squad247Data[$listKey] = $decoded[$listKey];
@@ -918,6 +1031,8 @@ class AdminsController extends AppController {
 
             $nextData = [
                 'convention_subtitle' => trim((string)($posted['convention_subtitle'] ?? '')),
+                'convention_dates_message' => trim((string)($posted['convention_dates_message'] ?? $squad247Data['convention_dates_message'])),
+                'convention_dates_message_enabled' => filter_var($posted['convention_dates_message_enabled'] ?? $squad247Data['convention_dates_message_enabled'], FILTER_VALIDATE_BOOLEAN),
                 'application_intro' => trim((string)($posted['application_intro'] ?? '')),
                 'success_requirements' => $normalizeLines($posted['success_requirements'] ?? ''),
                 'successful_need_to' => $normalizeLines($posted['successful_need_to'] ?? ''),
@@ -948,13 +1063,21 @@ class AdminsController extends AppController {
                 }
             }
 
-            if (empty($nextData['regions_left']) || empty($nextData['regions_right']) || empty($nextData['fees'])) {
+            if ($nextData['convention_dates_message_enabled'] && $nextData['convention_dates_message'] === '') {
+                $this->Flash->error('Enter a convention dates message before enabling it.');
+                $squad247Data = $nextData;
+            } elseif (empty($nextData['regions_left']) || empty($nextData['regions_right']) || empty($nextData['fees'])) {
                 $this->Flash->error('Please provide at least one row for each section before saving.');
                 $squad247Data = $nextData;
             } else {
-                @file_put_contents($contentFile, json_encode($nextData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-                $this->Flash->success('24/7 Squad information updated successfully.');
-                return $this->redirect(['action' => 'squad247']);
+                $encoded = json_encode($nextData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if ($encoded === false || file_put_contents($contentFile, $encoded, LOCK_EX) === false) {
+                    $this->Flash->error('Unable to save 24/7 Squad information. Please try again.');
+                    $squad247Data = $nextData;
+                } else {
+                    $this->Flash->success('24/7 Squad information updated successfully.');
+                    return $this->redirect(['action' => 'squad247']);
+                }
             }
         }
 
@@ -2086,8 +2209,32 @@ class AdminsController extends AppController {
             }
         }
 
+        $reportConventionOptions = [];
+        $conventionSeasonRows = $this->Conventionseasons->find()
+            ->select(['Conventionseasons.id', 'Conventionseasons.season_year', 'Conventions.name'])
+            ->contain(['Conventions'])
+            ->where(['Conventionseasons.season_year IS NOT' => null])
+            ->order(['Conventionseasons.season_year' => 'DESC', 'Conventions.name' => 'ASC'])
+            ->all();
+        foreach ($conventionSeasonRows as $conventionSeasonRow) {
+            $conventionName = trim((string)($conventionSeasonRow->Conventions['name'] ?? ''));
+            $reportConventionOptions[] = [
+                'id' => (int)$conventionSeasonRow->id,
+                'year' => (int)$conventionSeasonRow->season_year,
+                'name' => $conventionName !== '' ? $conventionName : 'Convention #' . (int)$conventionSeasonRow->id,
+            ];
+        }
+
+        $selectedReportType = $this->_resolveReportType();
+        $selectedConventionSeasonId = $selectedReportType === 'convention'
+            ? (int)$this->request->getQuery('conventionseason_id', 0)
+            : 0;
+
         $this->set('reportYearOptions', $reportYearOptions);
         $this->set('selectedReportYear', $selectedReportYear);
+        $this->set('reportConventionOptions', $reportConventionOptions);
+        $this->set('selectedReportType', $selectedReportType);
+        $this->set('selectedConventionSeasonId', $selectedConventionSeasonId);
 
         // Default values when no season is selected yet.
         $this->set('conv_season', null);
@@ -2102,9 +2249,13 @@ class AdminsController extends AppController {
         $this->set('first_place_winners', 0);
         $this->set('second_place_winners', 0);
         $this->set('third_place_winners', 0);
+        $this->set('fourth_place_winners', 0);
+        $this->set('fifth_place_winners', 0);
+        $this->set('sixth_place_winners', 0);
         $this->set('silver_apple_count', 0);
         $this->set('golden_awards_count', 0);
         $this->set('total_entries', 0);
+        $this->set('convention_date_lines', []);
         $this->set('hasReportData', false);
 
         if ($selectedReportYear <= 0) {
@@ -2113,9 +2264,16 @@ class AdminsController extends AppController {
 
         $this->request->getSession()->write('sess_admin_report_year', $selectedReportYear);
 
-        $reportData = $this->_buildConventionYearReportData($selectedReportYear);
+        if ($selectedReportType === 'convention' && $selectedConventionSeasonId <= 0) {
+            $this->Flash->error('Please select a convention for the individual report.');
+            return;
+        }
+
+        $reportData = $this->_buildConventionYearReportData($selectedReportYear, $selectedConventionSeasonId);
         if (empty($reportData['hasReportData'])) {
-            $this->Flash->error('No report data found for the selected year.');
+            $this->Flash->error($selectedConventionSeasonId > 0
+                ? 'No report data found for the selected convention and year.'
+                : 'No report data found for the selected year.');
             return;
         }
 
@@ -2131,9 +2289,13 @@ class AdminsController extends AppController {
         $this->set('first_place_winners', $reportData['first_place_winners']);
         $this->set('second_place_winners', $reportData['second_place_winners']);
         $this->set('third_place_winners', $reportData['third_place_winners']);
+        $this->set('fourth_place_winners', $reportData['fourth_place_winners']);
+        $this->set('fifth_place_winners', $reportData['fifth_place_winners']);
+        $this->set('sixth_place_winners', $reportData['sixth_place_winners']);
         $this->set('silver_apple_count', $reportData['silver_apple_count']);
         $this->set('golden_awards_count', $reportData['golden_awards_count']);
         $this->set('total_entries', $reportData['total_entries']);
+        $this->set('convention_date_lines', $reportData['convention_date_lines']);
         $this->set('hasReportData', true);
     }
 
@@ -2144,10 +2306,11 @@ class AdminsController extends AppController {
             return $this->redirect(['action' => 'report']);
         }
 
-        $reportData = $this->_buildConventionYearReportData($selectedReportYear);
+        $conventionSeasonId = $this->_resolveReportConventionSeasonId();
+        $reportData = $this->_buildConventionYearReportData($selectedReportYear, $conventionSeasonId);
         if (empty($reportData['hasReportData'])) {
-            $this->Flash->error('No report data found for the selected year.');
-            return $this->redirect(['action' => 'report', '?' => ['convention_year' => $selectedReportYear]]);
+            $this->Flash->error('No report data found for the selected report.');
+            return $this->redirect(['action' => 'report', '?' => $this->_reportQuery($selectedReportYear, $conventionSeasonId)]);
         }
 
         $pdf = $this->_generateProfessionalReportPDF(
@@ -2155,6 +2318,9 @@ class AdminsController extends AppController {
             $reportData['first_place_winners'],
             $reportData['second_place_winners'],
             $reportData['third_place_winners'],
+            $reportData['fourth_place_winners'],
+            $reportData['fifth_place_winners'],
+            $reportData['sixth_place_winners'],
             $reportData['total_schools'],
             $reportData['total_students'],
             $reportData['total_supervisors'],
@@ -2165,11 +2331,12 @@ class AdminsController extends AppController {
             $reportData['students_5_10_events'],
             $reportData['silver_apple_count'],
             $reportData['golden_awards_count'],
-            $reportData['total_entries']
+            $reportData['total_entries'],
+            $reportData['convention_date_lines']
         );
 
         // Output PDF for download
-        $filename = 'convention_report_' . date('Y-m-d_His') . '.pdf';
+        $filename = 'convention_report_' . ($conventionSeasonId > 0 ? 'convention_' . $conventionSeasonId . '_' : 'overall_') . $selectedReportYear . '_' . date('Y-m-d_His') . '.pdf';
         $pdf->Output($filename, 'D');
         die();
     }
@@ -2186,9 +2353,10 @@ class AdminsController extends AppController {
             return $this->redirect(['controller' => 'admins', 'action' => 'report']);
         }
 
-        $reportData = $this->_buildConventionYearReportData($selectedReportYear);
+        $conventionSeasonId = $this->_resolveReportConventionSeasonId();
+        $reportData = $this->_buildConventionYearReportData($selectedReportYear, $conventionSeasonId);
         if (empty($reportData['hasReportData'])) {
-            return $this->redirect(['controller' => 'admins', 'action' => 'report', '?' => ['convention_year' => $selectedReportYear]]);
+            return $this->redirect(['controller' => 'admins', 'action' => 'report', '?' => $this->_reportQuery($selectedReportYear, $conventionSeasonId)]);
         }
 
         $pdf = $this->_generateProfessionalReportPDF(
@@ -2196,6 +2364,9 @@ class AdminsController extends AppController {
             $reportData['first_place_winners'],
             $reportData['second_place_winners'],
             $reportData['third_place_winners'],
+            $reportData['fourth_place_winners'],
+            $reportData['fifth_place_winners'],
+            $reportData['sixth_place_winners'],
             $reportData['total_schools'],
             $reportData['total_students'],
             $reportData['total_supervisors'],
@@ -2206,7 +2377,8 @@ class AdminsController extends AppController {
             $reportData['students_5_10_events'],
             $reportData['silver_apple_count'],
             $reportData['golden_awards_count'],
-            $reportData['total_entries']
+            $reportData['total_entries'],
+            $reportData['convention_date_lines']
         );
 
         // Output PDF inline for preview
@@ -2252,7 +2424,32 @@ class AdminsController extends AppController {
         return 0;
     }
 
-    private function _buildConventionYearReportData(int $selectedYear): array
+    private function _resolveReportType(): string
+    {
+        return $this->request->getQuery('report_type') === 'convention' ? 'convention' : 'overall';
+    }
+
+    private function _resolveReportConventionSeasonId(): int
+    {
+        if ($this->_resolveReportType() !== 'convention') {
+            return 0;
+        }
+
+        return max(0, (int)$this->request->getQuery('conventionseason_id', 0));
+    }
+
+    private function _reportQuery(int $selectedYear, int $conventionSeasonId): array
+    {
+        $query = ['convention_year' => $selectedYear];
+        if ($conventionSeasonId > 0) {
+            $query['report_type'] = 'convention';
+            $query['conventionseason_id'] = $conventionSeasonId;
+        }
+
+        return $query;
+    }
+
+    private function _buildConventionYearReportData(int $selectedYear, int $conventionSeasonId = 0): array
     {
         $empty = [
             'hasReportData' => false,
@@ -2268,36 +2465,89 @@ class AdminsController extends AppController {
             'first_place_winners' => 0,
             'second_place_winners' => 0,
             'third_place_winners' => 0,
+            'fourth_place_winners' => 0,
+            'fifth_place_winners' => 0,
+            'sixth_place_winners' => 0,
             'silver_apple_count' => 0,
             'golden_awards_count' => 0,
             'total_entries' => 0,
+            'convention_date_lines' => [],
         ];
 
         if ($selectedYear <= 0) {
             return $empty;
         }
 
-        $seasonRows = $this->Conventionseasons->find()
-            ->select(['id', 'convention_id', 'season_year'])
+        $seasonQuery = $this->Conventionseasons->find()
+            ->select(['id', 'convention_id', 'season_year', 'registration_start_date', 'registration_end_date'])
             ->where(['Conventionseasons.season_year' => $selectedYear])
-            ->all();
+            ->order(['Conventionseasons.id' => 'DESC']);
+        if ($conventionSeasonId > 0) {
+            $seasonQuery->where(['Conventionseasons.id' => $conventionSeasonId]);
+        }
+        $seasonRows = $seasonQuery->all();
 
         if ($seasonRows->isEmpty()) {
             return $empty;
         }
 
         $seasonIds = [];
+        $conventionIds = [];
+        $seasonDateRangeByConvention = [];
         foreach ($seasonRows as $row) {
             $seasonIds[] = (int)$row->id;
+            $conventionId = (int)$row->convention_id;
+            if ($conventionId > 0) {
+                $conventionIds[] = $conventionId;
+                if (!isset($seasonDateRangeByConvention[$conventionId])) {
+                    $seasonDateRangeByConvention[$conventionId] = [
+                        'range' => '',
+                        'sortTs' => PHP_INT_MAX,
+                        'hasRange' => false,
+                    ];
+                }
+                $formattedRegistrationRange = $this->_formatConventionDateBounds(
+                    (string)$row->registration_start_date,
+                    (string)$row->registration_end_date
+                );
+                if ($formattedRegistrationRange !== '' && !$seasonDateRangeByConvention[$conventionId]['hasRange']) {
+                    $seasonDateRangeByConvention[$conventionId] = [
+                        'range' => $formattedRegistrationRange,
+                        'sortTs' => $this->_resolveDateBoundsSortTimestamp(
+                            (string)$row->registration_start_date,
+                            (string)$row->registration_end_date
+                        ),
+                        'hasRange' => true,
+                    ];
+                }
+            }
+        }
+        $conventionIds = array_values(array_unique($conventionIds));
+
+        // Individual reports restrict every statistic to the selected convention; overall reports cover the whole year.
+        $conventionScope = static function (string $alias) use ($conventionSeasonId, $conventionIds): array {
+            if ($conventionSeasonId <= 0) {
+                return [];
+            }
+
+            return [$alias . '.convention_id IN' => $conventionIds ?: [0]];
+        };
+
+        $reportTitle = 'All Conventions';
+        if ($conventionSeasonId > 0) {
+            $selectedConvention = !empty($conventionIds)
+                ? $this->Conventions->find()->select(['name'])->where(['Conventions.id' => $conventionIds[0]])->first()
+                : null;
+            $reportTitle = trim((string)($selectedConvention->name ?? '')) ?: 'Convention #' . $conventionSeasonId;
         }
 
         $convSeasonView = (object)[
             'season_year' => $selectedYear,
-            'Conventions' => ['name' => 'All Conventions'],
+            'Conventions' => ['name' => $reportTitle],
         ];
 
         $listSchools = $this->Conventionregistrations->find()
-            ->where(['season_year' => $selectedYear])
+            ->where(['Conventionregistrations.season_year' => $selectedYear] + $conventionScope('Conventionregistrations'))
             ->contain(['Users'])
             ->all();
 
@@ -2317,22 +2567,22 @@ class AdminsController extends AppController {
         $total_students = $this->Conventionregistrationstudents->find()
             ->select(['student_id'])
             ->where([
-                'season_year' => $selectedYear,
+                'Conventionregistrationstudents.season_year' => $selectedYear,
                 'student_id IS NOT' => null,
                 'student_id >' => 0,
-            ])
+            ] + $conventionScope('Conventionregistrationstudents'))
             ->distinct(['student_id'])
             ->count();
 
         $total_supervisors = $this->Conventionregistrationteachers->find()
-            ->where(['season_year' => $selectedYear])
+            ->where(['Conventionregistrationteachers.season_year' => $selectedYear] + $conventionScope('Conventionregistrationteachers'))
             ->count();
 
         $total_visitors = 0;
         try {
             $Visitors = $this->loadModel('Visitors');
             $total_visitors = $Visitors->find()
-                ->where(['season_year' => $selectedYear])
+                ->where(['Visitors.season_year' => $selectedYear] + $conventionScope('Visitors'))
                 ->count();
         } catch (\Exception $e) {
             $total_visitors = 0;
@@ -2377,21 +2627,31 @@ class AdminsController extends AppController {
         $first_place = 0;
         $second_place = 0;
         $third_place = 0;
+        $fourth_place = 0;
+        $fifth_place = 0;
+        $sixth_place = 0;
         try {
             $Resultpositions = $this->loadModel('Resultpositions');
-            $first_place = $Resultpositions->find()->where(['position' => 1, 'season_year' => $selectedYear])->count();
-            $second_place = $Resultpositions->find()->where(['position' => 2, 'season_year' => $selectedYear])->count();
-            $third_place = $Resultpositions->find()->where(['position' => 3, 'season_year' => $selectedYear])->count();
+            $positionScope = ['Resultpositions.season_year' => $selectedYear] + $conventionScope('Resultpositions');
+            $first_place = $Resultpositions->find()->where(['position' => 1] + $positionScope)->count();
+            $second_place = $Resultpositions->find()->where(['position' => 2] + $positionScope)->count();
+            $third_place = $Resultpositions->find()->where(['position' => 3] + $positionScope)->count();
+            $fourth_place = $Resultpositions->find()->where(['position' => 4] + $positionScope)->count();
+            $fifth_place = $Resultpositions->find()->where(['position' => 5] + $positionScope)->count();
+            $sixth_place = $Resultpositions->find()->where(['position' => 6] + $positionScope)->count();
         } catch (\Exception $e) {
             $first_place = 0;
             $second_place = 0;
             $third_place = 0;
+            $fourth_place = 0;
+            $fifth_place = 0;
+            $sixth_place = 0;
         }
 
         $silver_apple = 0;
         $golden_awards = 0;
         $silver_apple_students = $this->Conventionregistrationstudents->find()
-            ->where(['season_year' => $selectedYear])
+            ->where(['Conventionregistrationstudents.season_year' => $selectedYear] + $conventionScope('Conventionregistrationstudents'))
             ->all();
 
         foreach ($silver_apple_students as $reg) {
@@ -2413,6 +2673,86 @@ class AdminsController extends AppController {
             ->where(['conventionseason_id IN' => $seasonIds])
             ->count();
 
+        $conventionDateLines = [];
+        if (!empty($conventionIds)) {
+            $conventionNames = $this->Conventions->find()
+                ->select(['id', 'name'])
+                ->where(['Conventions.id IN' => $conventionIds])
+                ->all()
+                ->combine('id', 'name')
+                ->toArray();
+
+            $latestSchedulingByConvention = [];
+            if (!empty($conventionIds)) {
+                $Schedulings = $this->loadModel('Schedulings');
+                $schedulingRows = $Schedulings->find()
+                    ->select(['id', 'convention_id', 'start_date', 'number_of_days'])
+                    ->where([
+                        'Schedulings.season_year' => $selectedYear,
+                        'Schedulings.convention_id IN' => $conventionIds,
+                        'Schedulings.start_date IS NOT' => null,
+                    ])
+                    ->order(['Schedulings.id' => 'DESC'])
+                    ->all();
+
+                foreach ($schedulingRows as $schedulingRow) {
+                    $conventionId = (int)$schedulingRow->convention_id;
+                    if ($conventionId <= 0 || isset($latestSchedulingByConvention[$conventionId])) {
+                        continue;
+                    }
+                    $latestSchedulingByConvention[$conventionId] = $schedulingRow;
+                }
+            }
+
+            $conventionDateLineEntries = [];
+            foreach ($conventionIds as $conventionId) {
+                $conventionName = trim((string)($conventionNames[$conventionId] ?? ''));
+                if ($conventionName === '') {
+                    continue;
+                }
+                if ($this->_containsWholeWordTest($conventionName)) {
+                    continue;
+                }
+
+                if (!empty($latestSchedulingByConvention[$conventionId])) {
+                    $formattedRange = $this->_formatConventionDateRange(
+                        (string)$latestSchedulingByConvention[$conventionId]->start_date,
+                        (int)$latestSchedulingByConvention[$conventionId]->number_of_days
+                    );
+                    if ($formattedRange !== '') {
+                        $conventionDateLineEntries[] = [
+                            'line' => $conventionName . ' ' . $formattedRange,
+                            'sortTs' => $this->_resolveSchedulingEndTimestamp($latestSchedulingByConvention[$conventionId]),
+                        ];
+                        continue;
+                    }
+                }
+
+                if (!empty($seasonDateRangeByConvention[$conventionId]['range'])) {
+                    $rangeText = (string)$seasonDateRangeByConvention[$conventionId]['range'];
+                    $sortTimestamp = (int)($seasonDateRangeByConvention[$conventionId]['sortTs'] ?? PHP_INT_MAX);
+                    $conventionDateLineEntries[] = [
+                        'line' => $conventionName . ' (Registration: ' . $rangeText . ')',
+                        'sortTs' => $sortTimestamp,
+                    ];
+                    continue;
+                }
+
+                $conventionDateLineEntries[] = [
+                    'line' => $conventionName,
+                    'sortTs' => PHP_INT_MAX,
+                ];
+            }
+
+            usort($conventionDateLineEntries, function (array $a, array $b): int {
+                return $a['sortTs'] <=> $b['sortTs'];
+            });
+
+            foreach ($conventionDateLineEntries as $entry) {
+                $conventionDateLines[] = $entry['line'];
+            }
+        }
+
         return [
             'hasReportData' => true,
             'conv_season' => $convSeasonView,
@@ -2427,16 +2767,21 @@ class AdminsController extends AppController {
             'first_place_winners' => $first_place,
             'second_place_winners' => $second_place,
             'third_place_winners' => $third_place,
+            'fourth_place_winners' => $fourth_place,
+            'fifth_place_winners' => $fifth_place,
+            'sixth_place_winners' => $sixth_place,
             'silver_apple_count' => $silver_apple,
             'golden_awards_count' => $golden_awards,
             'total_entries' => $total_entries,
+            'convention_date_lines' => $conventionDateLines,
         ];
     }
 
-    private function _generateProfessionalReportPDF($convSD, $first_place, $second_place, $third_place, 
+    private function _generateProfessionalReportPDF($convSD, $first_place, $second_place, $third_place,
+        $fourth_place, $fifth_place, $sixth_place,
         $total_schools, $total_students, $total_supervisors, $total_judges, $total_visitors,
         $students_20_events, $students_11_15_events, $students_5_10_events,
-        $silver_apple, $golden_awards, $total_entries)
+        $silver_apple, $golden_awards, $total_entries, array $conventionDateLines = [])
     {
         $pdf = new \TCPDF();
         $pdf->SetCreator('ACP Live');
@@ -2444,7 +2789,7 @@ class AdminsController extends AppController {
         $pdf->SetTitle('Convention Report');
         $pdf->SetDefaultMonospacedFont(\PDF_FONT_MONOSPACED);
         $pdf->SetMargins(20, 20, 20);
-        $pdf->SetAutoPageBreak(true, 20);
+        $pdf->SetAutoPageBreak(true, 10);
         $pdf->AddPage();
 
         // Professional header
@@ -2457,14 +2802,26 @@ class AdminsController extends AppController {
         $pdf->Cell(0, 8, h($convSD->Conventions['name']) . ' ' . $convSD->season_year, 0, 1, 'C');
         $pdf->Ln(3);
 
+        if (!empty($conventionDateLines)) {
+            $pdf->SetFont('helvetica', '', 10);
+            $pdf->SetTextColor(70, 70, 70);
+            foreach ($conventionDateLines as $line) {
+                $pdf->Cell(0, 6, (string)$line, 0, 1, 'L');
+            }
+            $pdf->Ln(2);
+        }
+
         // Detailed Sections
         $sections = [
             [
                 'title' => 'PLACE WINNERS',
                 'data' => [
-                    ['1st Place Winners', $first_place],
-                    ['2nd Place Winners', $second_place],
-                    ['3rd Place Winners', $third_place],
+                    ['1st', $first_place],
+                    ['2nd', $second_place],
+                    ['3rd', $third_place],
+                    ['4th', $fourth_place],
+                    ['5th', $fifth_place],
+                    ['6th', $sixth_place],
                 ]
             ],
             [
@@ -2531,13 +2888,20 @@ class AdminsController extends AppController {
             $alternateBackground = !$alternateBackground;
         }
 
-        $pdf->Ln(10);
+        $pdf->Ln(8);
 
         // Events Coordinator Signature Section
+        // Keep this block together so "Date" doesn't get pushed to a new page alone.
+        $signatureBlockHeight = 28;
+        $usableBottom = $pdf->getPageHeight() - $pdf->getBreakMargin();
+        if (($pdf->GetY() + $signatureBlockHeight) > $usableBottom) {
+            $pdf->AddPage();
+        }
+
         $pdf->SetFont('helvetica', '', 10);
         $pdf->SetTextColor(0, 0, 0);
         $pdf->Cell(0, 8, 'Events Coordinator', 0, 1, 'L');
-        $pdf->Ln(12);
+        $pdf->Ln(8);
         
         $pdf->SetDrawColor(64, 64, 64);
         $pdf->SetLineWidth(0.3);
@@ -2554,5 +2918,123 @@ class AdminsController extends AppController {
         $pdf->Cell(70, 5, 'Date: ' . date('F d, Y'), 0, 1, 'L');
 
         return $pdf;
+    }
+
+    private function _formatConventionDateRange(string $startDate, int $numberOfDays): string
+    {
+        $startTs = strtotime($startDate);
+        if ($startTs === false) {
+            return '';
+        }
+
+        $days = max(1, $numberOfDays);
+        $endTs = strtotime('+' . ($days - 1) . ' days', $startTs);
+        if ($endTs === false) {
+            $endTs = $startTs;
+        }
+
+        $startDay = (int)date('j', $startTs);
+        $endDay = (int)date('j', $endTs);
+        $startMonth = date('M', $startTs);
+        $endMonth = date('M', $endTs);
+
+        if (date('Y-m-d', $startTs) === date('Y-m-d', $endTs)) {
+            return $this->_ordinalDay($startDay) . ' ' . $startMonth;
+        }
+
+        if ($startMonth === $endMonth) {
+            return $this->_ordinalDay($startDay) . ' - ' . $this->_ordinalDay($endDay) . ' ' . $endMonth;
+        }
+
+        return $this->_ordinalDay($startDay) . ' ' . $startMonth . ' - ' . $this->_ordinalDay($endDay) . ' ' . $endMonth;
+    }
+
+    private function _formatConventionDateBounds(string $startDate, string $endDate): string
+    {
+        $startTs = strtotime($startDate);
+        $endTs = strtotime($endDate);
+
+        if ($startTs === false && $endTs === false) {
+            return '';
+        }
+        if ($startTs === false) {
+            return $this->_ordinalDay((int)date('j', $endTs)) . ' ' . date('M', $endTs);
+        }
+        if ($endTs === false) {
+            return $this->_ordinalDay((int)date('j', $startTs)) . ' ' . date('M', $startTs);
+        }
+
+        if (date('Y-m-d', $startTs) === date('Y-m-d', $endTs)) {
+            return $this->_ordinalDay((int)date('j', $startTs)) . ' ' . date('M', $startTs);
+        }
+
+        $startMonth = date('M', $startTs);
+        $endMonth = date('M', $endTs);
+        $startDayOrdinal = $this->_ordinalDay((int)date('j', $startTs));
+        $endDayOrdinal = $this->_ordinalDay((int)date('j', $endTs));
+
+        if ($startMonth === $endMonth) {
+            return $startDayOrdinal . ' - ' . $endDayOrdinal . ' ' . $endMonth;
+        }
+
+        return $startDayOrdinal . ' ' . $startMonth . ' - ' . $endDayOrdinal . ' ' . $endMonth;
+    }
+
+    private function _ordinalDay(int $day): string
+    {
+        if ($day % 100 >= 11 && $day % 100 <= 13) {
+            return $day . 'th';
+        }
+
+        switch ($day % 10) {
+            case 1:
+                return $day . 'st';
+            case 2:
+                return $day . 'nd';
+            case 3:
+                return $day . 'rd';
+            default:
+                return $day . 'th';
+        }
+    }
+
+    private function _resolveDateBoundsSortTimestamp(string $startDate, string $endDate): int
+    {
+        $endTs = strtotime($endDate);
+        if ($endTs !== false) {
+            return $endTs;
+        }
+
+        $startTs = strtotime($startDate);
+        if ($startTs !== false) {
+            return $startTs;
+        }
+
+        return PHP_INT_MAX;
+    }
+
+    private function _resolveSchedulingEndTimestamp($schedulingRow): int
+    {
+        if (empty($schedulingRow) || empty($schedulingRow->start_date)) {
+            return PHP_INT_MAX;
+        }
+
+        $startTs = strtotime((string)$schedulingRow->start_date);
+        if ($startTs === false) {
+            return PHP_INT_MAX;
+        }
+
+        $numberOfDays = max(1, (int)($schedulingRow->number_of_days ?? 1));
+        $endTs = strtotime('+' . ($numberOfDays - 1) . ' days', $startTs);
+        if ($endTs !== false) {
+            return $endTs;
+        }
+
+        return $startTs;
+    }
+
+    private function _containsWholeWordTest(string $value): bool
+    {
+        return preg_match('/\btest\b/i', $value) === 1;
     }
 }

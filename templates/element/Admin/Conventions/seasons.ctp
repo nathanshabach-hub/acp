@@ -32,6 +32,7 @@
             .a-warn { color: #8b6612; background: #fff5d9; border-color: #f3e6b5; }
             .a-danger { color: #a53a3a; background: #ffe9ed; border-color: #f7ced6; }
             .grp-controls { flex: 1; min-width: 0; }
+            .grp-controls form { display: inline; }
             .grp-controls .delete-float { float: right; margin-left: 8px; }
 
             @media (max-width: 1280px) {

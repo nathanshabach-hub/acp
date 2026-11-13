@@ -7,8 +7,7 @@ $(document).ready(function () {
 	<div class="row">
 		<?php echo $this->element('user_left_menu'); ?>
 		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 profile-edit-page">
-			<h2 class="mt-3 profile-page-title">Edit Profile</h2>
-			  
+            <div class="ersu_message"><?= $this->Flash->render() ?></div>
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form profile-edit-form">
 				<h2 class="form-title">Edit Profile</h2>
@@ -138,8 +137,11 @@ $(document).ready(function () {
 					{
 					?>
 					<div class="form-group">
-						<label for="name">Login Code</label>
-						<?php echo $this->Form->input('Users.customer_code_no_save', ['label'=>false, 'type'=>'text',  'div'=>false, 'class'=>'form-control required', 'placeholder'=>'Login Code', 'value'=>$users->customer_code,'readonly','disabled']); ?>
+						<label for="student-login-id">Student ID</label>
+                        <input id="student-login-id" class="form-control" value="<?= h($studentPortalAccess['login_id'] ?? '') ?>" readonly disabled>
+                        <?php if ($this->request->getSession()->read('school_student_access') === null): ?>
+                            <?= $this->Html->link('Change password', ['action' => 'changepassword']) ?>
+                        <?php endif; ?>
 					</div>
 
 					<div class="form-group">

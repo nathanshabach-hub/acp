@@ -20,13 +20,6 @@ class SchedulingreportsController extends AppController {
 		$this->loadComponent('PImageTest');
         $this->loadComponent('Paginator');
         $this->loadComponent('Flash');
-        $action = $this->request->getParam('action');
-        $loggedAdminId = $this->request->getSession()->read('admin_id');
-        if ($action != 'forgotPassword' && $action != 'logout') {
-            if (!$loggedAdminId && $action != "login" && $action != 'captcha') {
-                $this->redirect(['controller' => 'admins', 'action' => 'login']);
-            }
-        }
 		
 		$this->loadModel("Conventionseasons");
 		$this->loadModel("Conventions");
@@ -43,6 +36,41 @@ class SchedulingreportsController extends AppController {
 		$this->loadModel("Schedulingtimings");
 		$this->loadModel("Users");
     }
+
+	private function parsePositiveInt(mixed $value): ?int
+	{
+		if ($value === null || $value === '') {
+			return null;
+		}
+		if (is_string($value) && !preg_match('/^\d+$/', $value)) {
+			return null;
+		}
+		$int = (int)$value;
+		return $int > 0 ? $int : null;
+	}
+
+	private function sanitizeIdList(array $ids): array
+	{
+		$clean = [];
+		foreach ($ids as $id) {
+			$int = $this->parsePositiveInt($id);
+			if ($int !== null) {
+				$clean[$int] = $int;
+			}
+		}
+
+		return array_values($clean);
+	}
+
+	private function schedulingSeasonScope(object $conventionSD): array
+	{
+		return [
+			'Schedulingtimings.conventionseasons_id' => (int)$conventionSD->id,
+			'Schedulingtimings.convention_id' => (int)$conventionSD->convention_id,
+			'Schedulingtimings.season_id' => (int)$conventionSD->season_id,
+			'Schedulingtimings.season_year' => (int)$conventionSD->season_year,
+		];
+	}
 	
 	/* By Students */
 	public function bystudents($convention_season_slug=null) {
@@ -77,14 +105,13 @@ class SchedulingreportsController extends AppController {
 		
 		if(count($arrSchoolList)>0)
 		{
-			// now fetch schools name and their id
-			$allSchoolsImploded = implode(',',$arrSchoolList);
-			$condS = array();
-			$condS[] = "(Users.id IN ($allSchoolsImploded) )";
-			$condS[] = "(Users.user_type = 'School' )";
+			$schoolIds = $this->sanitizeIdList($arrSchoolList);
 				
 			$schoolsDD = $this->Users->find()
-				->where($condS)
+				->where([
+					'Users.id IN' => $schoolIds ?: [0],
+					'Users.user_type' => 'School',
+				])
 				->order(['Users.first_name' => 'ASC'])
 				->combine('id', 'first_name')
 				->toArray();
@@ -102,8 +129,14 @@ class SchedulingreportsController extends AppController {
 			
 			$school_id 	= $this->request->getData()['Schedulingreports']['school_id'];
 			$student_id = $this->request->getData()['Schedulingreports']['student_id'];
+			$safeSchoolId = $this->parsePositiveInt($school_id);
+			$safeStudentId = $this->parsePositiveInt($student_id) ?? 0;
+			if ($safeSchoolId === null) {
+				$this->Flash->error('Invalid school selected.');
+				return $this->redirect(['controller' => 'schedulingreports', 'action' => 'bystudents', $convention_season_slug]);
+			}
 			
-			$this->redirect(['controller' => 'schedulingreports', 'action' => 'bystudentsshow',$convention_season_slug,$school_id,$student_id]);
+			$this->redirect(['controller' => 'schedulingreports', 'action' => 'bystudentsshow',$convention_season_slug,$safeSchoolId,$safeStudentId]);
 		}
     }
 	
@@ -115,8 +148,14 @@ class SchedulingreportsController extends AppController {
         $this->set('conventionList', '1');
 		
         $this->set('convention_season_slug', $convention_season_slug);
-        $this->set('school_id', $school_id);
-        $this->set('student_id', $student_id);
+		$safeSchoolId = $this->parsePositiveInt($school_id);
+		$safeStudentId = $this->parsePositiveInt($student_id);
+		if ($safeSchoolId === null) {
+			$this->Flash->error('Invalid school selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'bystudents', $convention_season_slug]);
+		}
+        $this->set('school_id', $safeSchoolId);
+        $this->set('student_id', $safeStudentId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -128,23 +167,26 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$schoolD = $this->Users->find()->where(['Users.id' => $school_id])->first();
+		$schoolD = $this->Users->find()->where(['Users.id' => $safeSchoolId])->first();
 		$this->set('schoolD', $schoolD);
 		
 		// now get all students of this School
 		$arrStudentsCS = array();
-		$condST = array();
-		$condST[] = "(Conventionregistrationstudents.convention_id = '".$conventionSD->convention_id."' AND  Conventionregistrationstudents.season_id = '".$conventionSD->season_id."' AND   Conventionregistrationstudents.season_year = '".$conventionSD->season_year."')";
-		$condST[] = "(Conventionregistrationstudents.status = '1' AND Conventionregistrationstudents.student_id > 0)";
-		$condST[] = "(Conventionregistrationstudents.user_id = '".$school_id."')";
-		
-		if($student_id>0)
+		$studentConditions = [
+			'Conventionregistrationstudents.convention_id' => (int)$conventionSD->convention_id,
+			'Conventionregistrationstudents.season_id' => (int)$conventionSD->season_id,
+			'Conventionregistrationstudents.season_year' => (int)$conventionSD->season_year,
+			'Conventionregistrationstudents.status' => 1,
+			'Conventionregistrationstudents.student_id >' => 0,
+			'Conventionregistrationstudents.user_id' => $safeSchoolId,
+		];
+		if($safeStudentId !== null)
 		{
-			$condST[] = "(Conventionregistrationstudents.student_id = '".$student_id."')";
+			$studentConditions['Conventionregistrationstudents.student_id'] = $safeStudentId;
 		}
 		
 		$studentsCS = $this->Conventionregistrationstudents->find()
-			->where($condST)
+			->where($studentConditions)
 			->select(['student_id'])
 			->all();
 		
@@ -155,16 +197,14 @@ class SchedulingreportsController extends AppController {
 				$arrStudentsCS[] = $studentEV->student_id;
 			}
 		}
-		$arrStudentsCSImploded = implode(',',$arrStudentsCS);
+		$studentIds = $this->sanitizeIdList($arrStudentsCS);
 		
 		
 		// Now arrange students in alphabetical order
 		$arrStudentNames = array();
 		$arrStudentSorted 	= array();
-		$condStudentSch 	= array();
-		$condStudentSch[] = "(Users.id IN ($arrStudentsCSImploded) )";
 		$studentsLSch  = $this->Users->find()
-			->where($condStudentSch)
+			->where(['Users.id IN' => $studentIds ?: [0]])
 			->order(["Users.first_name" => "ASC", "Users.last_name" => "ASC"])
 			->all();
 		foreach($studentsLSch as $studentSort)
@@ -184,8 +224,14 @@ class SchedulingreportsController extends AppController {
         $this->viewBuilder()->setLayout('print_reports');
 		
 		$this->set('convention_season_slug', $convention_season_slug);
-        $this->set('school_id', $school_id);
-        $this->set('student_id', $student_id);
+		$safeSchoolId = $this->parsePositiveInt($school_id);
+		$safeStudentId = $this->parsePositiveInt($student_id);
+		if ($safeSchoolId === null) {
+			$this->Flash->error('Invalid school selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'bystudents', $convention_season_slug]);
+		}
+        $this->set('school_id', $safeSchoolId);
+        $this->set('student_id', $safeStudentId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -197,23 +243,26 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$schoolD = $this->Users->find()->where(['Users.id' => $school_id])->first();
+		$schoolD = $this->Users->find()->where(['Users.id' => $safeSchoolId])->first();
 		$this->set('schoolD', $schoolD);
 		
 		// now get all students of this School
 		$arrStudentsCS = array();
-		$condST = array();
-		$condST[] = "(Conventionregistrationstudents.convention_id = '".$conventionSD->convention_id."' AND  Conventionregistrationstudents.season_id = '".$conventionSD->season_id."' AND   Conventionregistrationstudents.season_year = '".$conventionSD->season_year."')";
-		$condST[] = "(Conventionregistrationstudents.status = '1' AND Conventionregistrationstudents.student_id > 0)";
-		$condST[] = "(Conventionregistrationstudents.user_id = '".$school_id."')";
-		
-		if($student_id>0)
+		$studentConditions = [
+			'Conventionregistrationstudents.convention_id' => (int)$conventionSD->convention_id,
+			'Conventionregistrationstudents.season_id' => (int)$conventionSD->season_id,
+			'Conventionregistrationstudents.season_year' => (int)$conventionSD->season_year,
+			'Conventionregistrationstudents.status' => 1,
+			'Conventionregistrationstudents.student_id >' => 0,
+			'Conventionregistrationstudents.user_id' => $safeSchoolId,
+		];
+		if($safeStudentId !== null)
 		{
-			$condST[] = "(Conventionregistrationstudents.student_id = '".$student_id."')";
+			$studentConditions['Conventionregistrationstudents.student_id'] = $safeStudentId;
 		}
 		
 		$studentsCS = $this->Conventionregistrationstudents->find()
-			->where($condST)
+			->where($studentConditions)
 			->select(['student_id'])
 			->all();
 		
@@ -224,16 +273,14 @@ class SchedulingreportsController extends AppController {
 				$arrStudentsCS[] = $studentEV->student_id;
 			}
 		}
-		$arrStudentsCSImploded = implode(',',$arrStudentsCS);
+		$studentIds = $this->sanitizeIdList($arrStudentsCS);
 		
 		
 		// Now arrange students in alphabetical order
 		$arrStudentNames = array();
 		$arrStudentSorted 	= array();
-		$condStudentSch 	= array();
-		$condStudentSch[] = "(Users.id IN ($arrStudentsCSImploded) )";
 		$studentsLSch  = $this->Users->find()
-			->where($condStudentSch)
+			->where(['Users.id IN' => $studentIds ?: [0]])
 			->order(["Users.first_name" => "ASC", "Users.last_name" => "ASC"])
 			->all();
 		foreach($studentsLSch as $studentSort)
@@ -281,14 +328,13 @@ class SchedulingreportsController extends AppController {
 		
 		if(count($arrSchoolList)>0)
 		{
-			// now fetch schools name and their id
-			$allSchoolsImploded = implode(',',$arrSchoolList);
-			$condS = array();
-			$condS[] = "(Users.id IN ($allSchoolsImploded) )";
-			$condS[] = "(Users.user_type = 'School' )";
+			$schoolIds = $this->sanitizeIdList($arrSchoolList);
 				
 			$schoolsDD = $this->Users->find()
-				->where($condS)
+				->where([
+					'Users.id IN' => $schoolIds ?: [0],
+					'Users.user_type' => 'School',
+				])
 				->order(['Users.first_name' => 'ASC'])
 				->combine('id', 'first_name')
 				->toArray();
@@ -304,7 +350,11 @@ class SchedulingreportsController extends AppController {
 			
 			//$this->prx($this->request->getData());
 			
-			$school_id 	= $this->request->getData()['Schedulingreports']['school_id'];
+			$school_id 	= $this->parsePositiveInt($this->request->getData()['Schedulingreports']['school_id'] ?? null);
+			if ($school_id === null) {
+				$this->Flash->error('Invalid school selected.');
+				return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byschools', $convention_season_slug]);
+			}
 			
 			$this->redirect(['controller' => 'schedulingreports', 'action' => 'byschoolsshow',$convention_season_slug,$school_id]);
 		}
@@ -318,7 +368,12 @@ class SchedulingreportsController extends AppController {
         $this->set('conventionList', '1');
 		
         $this->set('convention_season_slug', $convention_season_slug);
-        $this->set('school_id', $school_id);
+		$safeSchoolId = $this->parsePositiveInt($school_id);
+		if ($safeSchoolId === null) {
+			$this->Flash->error('Invalid school selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byschools', $convention_season_slug]);
+		}
+        $this->set('school_id', $safeSchoolId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -330,30 +385,28 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$schoolD = $this->Users->find()->where(['Users.id' => $school_id])->first();
+		$schoolD = $this->Users->find()->where(['Users.id' => $safeSchoolId])->first();
 		$this->set('schoolD', $schoolD);
 
 		// Collect student IDs registered under this school for this season
 		$studentIds = $this->Conventionregistrationstudents->find()
 			->select(['student_id'])
-			->where(['user_id' => $school_id, 'season_year' => $conventionSD->season_year, 'status' => 1, 'student_id >' => 0])
+			->where(['user_id' => $safeSchoolId, 'season_year' => $conventionSD->season_year, 'status' => 1, 'student_id >' => 0])
 			->all()
 			->extract('student_id')
 			->toArray();
 
 		// Match school-level (group) records OR student-level (individual) records
-		$userIds = array_unique(array_merge([(int)$school_id], $studentIds));
-		$inList = implode(',', $userIds);
-
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "(Schedulingtimings.user_id IN (".$inList.") OR Schedulingtimings.user_id_opponent IN (".$inList."))";
+		$userIds = $this->sanitizeIdList(array_unique(array_merge([$safeSchoolId], $studentIds)));
 		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(function ($exp) use ($userIds) {
+				return $exp->or([
+					'Schedulingtimings.user_id IN' => $userIds ?: [0],
+					'Schedulingtimings.user_id_opponent IN' => $userIds ?: [0],
+				]);
+			})
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -376,29 +429,33 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$schoolD = $this->Users->find()->where(['Users.id' => $school_id])->first();
+		$safeSchoolId = $this->parsePositiveInt($school_id);
+		if ($safeSchoolId === null) {
+			$this->Flash->error('Invalid school selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byschools', $convention_season_slug]);
+		}
+		$schoolD = $this->Users->find()->where(['Users.id' => $safeSchoolId])->first();
 		$this->set('schoolD', $schoolD);
 
 		// Collect student IDs registered under this school for this season
 		$studentIds = $this->Conventionregistrationstudents->find()
 			->select(['student_id'])
-			->where(['user_id' => $school_id, 'season_year' => $conventionSD->season_year, 'status' => 1, 'student_id >' => 0])
+			->where(['user_id' => $safeSchoolId, 'season_year' => $conventionSD->season_year, 'status' => 1, 'student_id >' => 0])
 			->all()
 			->extract('student_id')
 			->toArray();
 
 		// Match school-level (group) records OR student-level (individual) records
-		$userIds = array_unique(array_merge([(int)$school_id], $studentIds));
-
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "Schedulingtimings.user_id IN (".implode(',', $userIds).")";
+		$userIds = $this->sanitizeIdList(array_unique(array_merge([$safeSchoolId], $studentIds)));
 		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(function ($exp) use ($userIds) {
+				return $exp->or([
+					'Schedulingtimings.user_id IN' => $userIds ?: [0],
+					'Schedulingtimings.user_id_opponent IN' => $userIds ?: [0],
+				]);
+			})
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -453,8 +510,13 @@ class SchedulingreportsController extends AppController {
 			if ($event_id === 'athletics_sports_all' || $event_id === 'athletics_all') {
 				return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byeventsathleticsprint', $convention_season_slug]);
 			}
+			$safeEventId = $this->parsePositiveInt($event_id);
+			if ($safeEventId === null) {
+				$this->Flash->error('Invalid event selected.');
+				return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byevents', $convention_season_slug]);
+			}
 			
-			$this->redirect(['controller' => 'schedulingreports', 'action' => 'byeventsshow',$convention_season_slug,$event_id]);
+			$this->redirect(['controller' => 'schedulingreports', 'action' => 'byeventsshow',$convention_season_slug,$safeEventId]);
 		}
     }
 	
@@ -466,7 +528,12 @@ class SchedulingreportsController extends AppController {
         $this->set('conventionList', '1');
 		
         $this->set('convention_season_slug', $convention_season_slug);
-        $this->set('event_id', $event_id);
+		$safeEventId = $this->parsePositiveInt($event_id);
+		if ($safeEventId === null) {
+			$this->Flash->error('Invalid event selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byevents', $convention_season_slug]);
+		}
+        $this->set('event_id', $safeEventId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -478,19 +545,13 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$eventD = $this->Events->find()->where(['Events.id' => $event_id])->first();
+		$eventD = $this->Events->find()->where(['Events.id' => $safeEventId])->first();
 		$this->set('eventD', $eventD);
-		$this->set('eventStudentRows', $this->buildEventStudentRows($conventionSD, (int)$event_id));
-		
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "(Schedulingtimings.event_id = '".$event_id."')";
+		$this->set('eventStudentRows', $this->buildEventStudentRows($conventionSD, $safeEventId));
 		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(['Schedulingtimings.event_id' => $safeEventId])
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -513,27 +574,26 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$eventD = $this->Events->find()->where(['Events.id' => $event_id])->first();
+		$safeEventId = $this->parsePositiveInt($event_id);
+		if ($safeEventId === null) {
+			$this->Flash->error('Invalid event selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byevents', $convention_season_slug]);
+		}
+		$eventD = $this->Events->find()->where(['Events.id' => $safeEventId])->first();
 		$this->set('eventD', $eventD);
-		$this->set('eventStudentRows', $this->buildEventStudentRows($conventionSD, (int)$event_id));
-		$this->set('eventStudentGroups', $this->buildEventStudentGroups($conventionSD, (int)$event_id));
+		$this->set('eventStudentRows', $this->buildEventStudentRows($conventionSD, $safeEventId));
+		$this->set('eventStudentGroups', $this->buildEventStudentGroups($conventionSD, $safeEventId));
 		$convSeasonEventD = $this->Conventionseasonevents->find()->where([
 			'Conventionseasonevents.conventionseasons_id' => $conventionSD->id,
-			'Conventionseasonevents.event_id' => $event_id,
+			'Conventionseasonevents.event_id' => $safeEventId,
 		])->first();
 		$this->set('convSeasonEventD', $convSeasonEventD);
 		
-		$this->set('event_id', $event_id);
-		
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "(Schedulingtimings.event_id = '".$event_id."')";
+		$this->set('event_id', $safeEventId);
 		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(['Schedulingtimings.event_id' => $safeEventId])
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -818,7 +878,11 @@ class SchedulingreportsController extends AppController {
 			
 			//$this->prx($this->request->getData());
 			
-			$room_id 	= $this->request->getData()['Schedulingreports']['room_id'];
+			$room_id 	= $this->parsePositiveInt($this->request->getData()['Schedulingreports']['room_id'] ?? null);
+			if ($room_id === null) {
+				$this->Flash->error('Invalid room selected.');
+				return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byrooms', $convention_season_slug]);
+			}
 			
 			$this->redirect(['controller' => 'schedulingreports', 'action' => 'byroomsshow',$convention_season_slug,$room_id]);
 		}
@@ -832,7 +896,12 @@ class SchedulingreportsController extends AppController {
         $this->set('conventionList', '1');
 		
         $this->set('convention_season_slug', $convention_season_slug);
-        $this->set('room_id', $room_id);
+		$safeRoomId = $this->parsePositiveInt($room_id);
+		if ($safeRoomId === null) {
+			$this->Flash->error('Invalid room selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byrooms', $convention_season_slug]);
+		}
+        $this->set('room_id', $safeRoomId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -844,18 +913,12 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$roomD = $this->Conventionrooms->find()->where(['Conventionrooms.id' => $room_id])->first();
+		$roomD = $this->Conventionrooms->find()->where(['Conventionrooms.id' => $safeRoomId])->first();
 		$this->set('roomD', $roomD);
 		
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "(Schedulingtimings.room_id = '".$room_id."')";
-		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(['Schedulingtimings.room_id' => $safeRoomId])
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -868,7 +931,12 @@ class SchedulingreportsController extends AppController {
         $this->set('conventionList', '1');
 		
         $this->set('convention_season_slug', $convention_season_slug);
-        $this->set('room_id', $room_id);
+		$safeRoomId = $this->parsePositiveInt($room_id);
+		if ($safeRoomId === null) {
+			$this->Flash->error('Invalid room selected.');
+			return $this->redirect(['controller' => 'schedulingreports', 'action' => 'byrooms', $convention_season_slug]);
+		}
+        $this->set('room_id', $safeRoomId);
 		
 		$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 		
@@ -880,18 +948,12 @@ class SchedulingreportsController extends AppController {
 		$this->set('schedulingD', $schedulingD);
 		
 		// to get school details
-		$roomD = $this->Conventionrooms->find()->where(['Conventionrooms.id' => $room_id])->first();
+		$roomD = $this->Conventionrooms->find()->where(['Conventionrooms.id' => $safeRoomId])->first();
 		$this->set('roomD', $roomD);
 		
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-		$condSch[] = "(Schedulingtimings.room_id = '".$room_id."')";
-		
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
+			->andWhere(['Schedulingtimings.room_id' => $safeRoomId])
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order(["Schedulingtimings.sch_date_time" => "ASC"])
 			->all();
@@ -1026,7 +1088,7 @@ class SchedulingreportsController extends AppController {
 					'Schedulingtimings.season_year' => $conventionSD->season_year,
 				])
 				->andWhere(function ($exp) use ($studentIds) {
-					return $exp->or_([
+					return $exp->or([
 						'Schedulingtimings.user_id IN' => $studentIds,
 						'Schedulingtimings.user_id_opponent IN' => $studentIds,
 					]);
@@ -1069,7 +1131,7 @@ class SchedulingreportsController extends AppController {
 						'Schedulingtimings.group_name' => $groupName,
 					])
 					->andWhere(function ($exp) use ($schoolId) {
-						return $exp->or_([
+						return $exp->or([
 							'Schedulingtimings.user_id' => $schoolId,
 							'Schedulingtimings.user_id_opponent' => $schoolId,
 						]);
@@ -1143,7 +1205,7 @@ class SchedulingreportsController extends AppController {
 					'Schedulingtimings.season_year' => $conventionSD->season_year,
 				])
 				->andWhere(function ($exp) use ($studentIds) {
-					return $exp->or_([
+					return $exp->or([
 						'Schedulingtimings.user_id IN' => $studentIds,
 						'Schedulingtimings.user_id_opponent IN' => $studentIds,
 					]);
@@ -1185,7 +1247,7 @@ class SchedulingreportsController extends AppController {
 						'Schedulingtimings.group_name' => $groupName,
 					])
 					->andWhere(function ($exp) use ($schoolId) {
-						return $exp->or_([
+						return $exp->or([
 							'Schedulingtimings.user_id' => $schoolId,
 							'Schedulingtimings.user_id_opponent' => $schoolId,
 						]);
@@ -1237,18 +1299,23 @@ class SchedulingreportsController extends AppController {
 		$allSponsorsData = [];
 		if (!empty($sponsorIds)) {
 			// Order sponsors by their registered school name, then by sponsor name
-			$db = \Cake\Datasource\ConnectionManager::get('default');
-			$inList = implode(',', $sponsorIds);
-			$sponsorSchoolRows = $db->execute(
-				"SELECT crs.teacher_parent_id, MIN(u.first_name) as school_name
-				 FROM conventionregistrationstudents crs
-				 JOIN users u ON u.id = crs.user_id
-				 WHERE crs.teacher_parent_id IN ($inList)
-				   AND crs.convention_id = ? AND crs.season_year = ? AND crs.status = 1 AND crs.student_id > 0
-				 GROUP BY crs.teacher_parent_id
-				 ORDER BY school_name ASC",
-				[$conventionSD->convention_id, $conventionSD->season_year]
-			)->fetchAll('assoc');
+			$sponsorSchoolRows = $this->Conventionregistrationstudents->find()
+				->select([
+					'teacher_parent_id' => 'Conventionregistrationstudents.teacher_parent_id',
+					'school_name' => 'MIN(Users.first_name)',
+				])
+				->innerJoin(['Users' => 'users'], ['Users.id = Conventionregistrationstudents.user_id'])
+				->where([
+					'Conventionregistrationstudents.teacher_parent_id IN' => $sponsorIds,
+					'Conventionregistrationstudents.convention_id' => $conventionSD->convention_id,
+					'Conventionregistrationstudents.season_year' => $conventionSD->season_year,
+					'Conventionregistrationstudents.status' => 1,
+					'Conventionregistrationstudents.student_id >' => 0,
+				])
+				->group(['Conventionregistrationstudents.teacher_parent_id'])
+				->order(['school_name' => 'ASC'])
+				->enableHydration(false)
+				->toArray();
 			$orderedSponsorIds = array_column($sponsorSchoolRows, 'teacher_parent_id');
 			// Any sponsors not in the result go at the end
 			foreach ($sponsorIds as $sid) {
@@ -1273,7 +1340,7 @@ class SchedulingreportsController extends AppController {
 
 				$schedulingTimingIds = [];
 				$studentScheduleRows = $this->Schedulingtimings->find()->select(['id'])->where(['Schedulingtimings.conventionseasons_id' => $conventionSD->id, 'Schedulingtimings.convention_id' => $conventionSD->convention_id, 'Schedulingtimings.season_id' => $conventionSD->season_id, 'Schedulingtimings.season_year' => $conventionSD->season_year])
-					->andWhere(function ($exp) use ($studentIds) { return $exp->or_(['Schedulingtimings.user_id IN' => $studentIds, 'Schedulingtimings.user_id_opponent IN' => $studentIds]); })->all();
+					->andWhere(function ($exp) use ($studentIds) { return $exp->or(['Schedulingtimings.user_id IN' => $studentIds, 'Schedulingtimings.user_id_opponent IN' => $studentIds]); })->all();
 				foreach ($studentScheduleRows as $r) { $schedulingTimingIds[] = (int)$r->id; }
 
 				$groupRows = $this->Crstudentevents->find()->select(['student_id','user_id','event_id','event_id_number','group_name'])->where(['Crstudentevents.conventionseason_id' => $conventionSD->id, 'Crstudentevents.convention_id' => $conventionSD->convention_id, 'Crstudentevents.season_id' => $conventionSD->season_id, 'Crstudentevents.season_year' => $conventionSD->season_year, 'Crstudentevents.student_id IN' => $studentIds, 'Crstudentevents.group_name !=' => ''])->all();
@@ -1281,7 +1348,7 @@ class SchedulingreportsController extends AppController {
 					$schoolId = (int)($gr->user_id ?? 0); $eventId = (int)($gr->event_id ?? 0); $eventIdNumber = trim((string)($gr->event_id_number ?? '')); $groupName = trim((string)($gr->group_name ?? ''));
 					if ($schoolId <= 0 || $eventId <= 0 || $groupName === '') continue;
 					$gRows = $this->Schedulingtimings->find()->select(['id'])->where(['Schedulingtimings.conventionseasons_id' => $conventionSD->id, 'Schedulingtimings.convention_id' => $conventionSD->convention_id, 'Schedulingtimings.season_id' => $conventionSD->season_id, 'Schedulingtimings.season_year' => $conventionSD->season_year, 'Schedulingtimings.event_id' => $eventId, 'Schedulingtimings.event_id_number' => $eventIdNumber, 'Schedulingtimings.group_name' => $groupName])
-						->andWhere(function ($exp) use ($schoolId) { return $exp->or_(['Schedulingtimings.user_id' => $schoolId, 'Schedulingtimings.user_id_opponent' => $schoolId]); })->all();
+						->andWhere(function ($exp) use ($schoolId) { return $exp->or(['Schedulingtimings.user_id' => $schoolId, 'Schedulingtimings.user_id_opponent' => $schoolId]); })->all();
 					foreach ($gRows as $r) { $schedulingTimingIds[] = (int)$r->id; }
 				}
 
@@ -1370,14 +1437,8 @@ class SchedulingreportsController extends AppController {
 			$lunchEnd = date('H:i:s', strtotime((string)$schedulingD->lunch_time_end));
 		}
 
-		$condSch = array();
-		$condSch[] = "(Schedulingtimings.conventionseasons_id = '".$conventionSD->id."' AND 
-		Schedulingtimings.convention_id = '".$conventionSD->convention_id."' AND 
-		Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
-		Schedulingtimings.season_year = '".$conventionSD->season_year."')";
-
 		$schedulingTimingsList = $this->Schedulingtimings->find()
-			->where($condSch)
+			->where($this->schedulingSeasonScope($conventionSD))
 			->contain(["Events","Conventionrooms","Users","Opponentuser"])
 			->order([
 				"Schedulingtimings.sch_date_time" => "ASC",
@@ -1523,6 +1584,16 @@ class SchedulingreportsController extends AppController {
 		}
 
 		$programDays = $this->applySmallProgramEventOverrides($programDays, $smallProgramNotes);
+		foreach ($programDays as &$dayData) {
+			foreach ($dayData['sessions'] as &$sessionData) {
+				foreach ($sessionData['rooms'] as &$eventNames) {
+					$eventNames = $this->groupSmallProgramAgeDivisions($eventNames);
+				}
+				unset($eventNames);
+			}
+			unset($sessionData);
+		}
+		unset($dayData);
 
 		$dateRangeFromSchedule = '';
 		if ($minDate !== null && $maxDate !== null) {
@@ -1542,6 +1613,39 @@ class SchedulingreportsController extends AppController {
 			'programDays' => $programDays,
 			'programDateRangeLabel' => $programDateRangeLabel,
 		);
+	}
+
+	private function groupSmallProgramAgeDivisions(array $eventNames): array {
+		$groups = [];
+		$output = [];
+		foreach ($eventNames as $eventName) {
+			if (!preg_match('/^(.+?)\s+(U\d+|OPEN)$/i', $eventName, $matches)
+				|| !preg_match('/(?:\b(?:Duet|Trio|Quartet)|^Table Tennis\s*-\s*Doubles\s+\((?:Male|Female)\))$/i', $matches[1])) {
+				$output[] = $eventName;
+				continue;
+			}
+			$key = strtolower($matches[1]);
+			if (!isset($groups[$key])) {
+				$groups[$key] = ['base' => $matches[1], 'ages' => [], 'index' => count($output)];
+				$output[] = '';
+			}
+			$groups[$key]['ages'][strtoupper($matches[2])] = true;
+		}
+		foreach ($groups as $group) {
+			$ages = array_keys($group['ages']);
+			usort($ages, static function (string $a, string $b): int {
+				if ($a === 'OPEN') {
+					return $b === 'OPEN' ? 0 : 1;
+				}
+				if ($b === 'OPEN') {
+					return -1;
+				}
+				return (int)substr($a, 1) <=> (int)substr($b, 1);
+			});
+			$separator = count($ages) === 2 ? ' & ' : ', ';
+			$output[$group['index']] = $group['base'].' '.implode($separator, $ages);
+		}
+		return $output;
 	}
 
 	private function getSmallProgramDayOptions(array $programDays): array {

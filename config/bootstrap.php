@@ -11,6 +11,7 @@ use Cake\Mailer\TransportFactory;
 use Cake\Utility\Security;
 
 require dirname(__DIR__) . '/vendors/autoload.php';
+\App\Deployment\Environment::initialize(dirname(__DIR__));
 require __DIR__ . '/paths.php';
 
 if (!function_exists('__')) {
@@ -35,7 +36,16 @@ if (!function_exists('h')) {
 }
 
 Configure::config('default', new PhpConfig());
-Configure::load('app', 'default', false);
+if (\App\Deployment\Environment::isHosted()) {
+    require __DIR__ . '/hosted_legacy.php';
+    Configure::write(require __DIR__ . '/app.default.php');
+} else {
+    Configure::load('app', 'default', false);
+}
+Configure::write(\App\Deployment\Environment::apply(
+    Configure::read(),
+    \App\Deployment\Environment::settings(),
+));
 
 if (!Configure::read('debug')) {
     Configure::write('Cache._cake_model_.duration', '+1 years');

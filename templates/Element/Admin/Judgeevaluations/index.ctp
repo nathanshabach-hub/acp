@@ -24,11 +24,7 @@
         })
     })            
 </script>
-<?php
-use Cake\ORM\TableRegistry;
-$this->Evaluationquestions = TableRegistry::getTableLocator()->get('Evaluationquestions');
-$isSquadAdmin = (strtolower((string)$this->request->getSession()->read('admin_username')) === 'squad');
-?>
+<?php $isSquadAdmin = (strtolower((string)$this->request->getSession()->read('admin_username')) === 'squad'); ?>
 <div class="admin_loader" id="loaderID"><?php echo $this->Html->image('loader_large_blue.gif');?></div>
 <?php
 $rowsToRender = isset($judgeEvaluationRows) && is_array($judgeEvaluationRows)
@@ -42,6 +38,14 @@ $rowsToRender = isset($judgeEvaluationRows) && is_array($judgeEvaluationRows)
         <section id="no-more-tables" class="lstng-section">
             <div class="topn">
                 <div class="topn_left">Judge Evaluations</div>
+                <div class="topn_right ajshort" id="pagingLinks" align="right">
+                    <?php
+                        echo $this->Paginator->counter(['model' => 'Judgeevaluations', 'format' => '{{page}} of {{pages}} &nbsp;']);
+                        echo $this->Paginator->prev('« Prev');
+                        echo $this->Paginator->numbers();
+                        echo $this->Paginator->next('Next »');
+                    ?>
+                </div>
             </div>   
 
             <div class="tbl-resp-listing">
@@ -287,11 +291,10 @@ $rowsToRender = isset($judgeEvaluationRows) && is_array($judgeEvaluationRows)
                     <table class="table table-bordered">
                         <tr><td colspan="4">Comments: <?php echo $datarecord->comments ?: 'N/A'; ?></td></tr>
                         <tr><td>#</td><td>Question</td><td>Max</td><td>Obtained</td></tr>
-                        <?php $cntrQ = 1; foreach($datarecord->Judgeevaluationmarks as $judgevalmark) { 
-                            $questionD = $this->Evaluationquestions->find()->where(["Evaluationquestions.id" => $judgevalmark->question_id])->first(); ?>
+                        <?php $cntrQ = 1; foreach($datarecord->Judgeevaluationmarks as $judgevalmark) { ?>
                         <tr>
                             <td><?php echo $cntrQ++; ?></td>
-                            <td><?php echo $questionD->question; ?></td>
+                            <td><?php echo h($evaluationQuestionsById[(int)$judgevalmark->question_id] ?? ''); ?></td>
                             <td><?php echo $judgevalmark->question_marks_possible; ?></td>
                             <td><?php echo $judgevalmark->question_marks_obtained; ?></td>
                         </tr>

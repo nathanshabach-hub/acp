@@ -11,6 +11,9 @@ $(document).ready(function () {
 			  
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form">
+                <?php if ((int)$transactionD->status === 4): ?>
+                    <div class="alert alert-warning">This unpaid request was cancelled. These registrations can be included in a new request from Payment Summary.</div>
+                <?php endif; ?>
 				<!--<h2 class="form-title">Edit Profile</h2>-->
 				
 				<section id="no-more-tables" class="lstng-section">
@@ -146,7 +149,7 @@ $(document).ready(function () {
 							
 							
 							<div class="form-horizontal" style="padding-bottom:20px;">
-									<?php echo $this->Html->link('Back to transactions', ['controller'=>'transactions', 'action' => 'index'], ['class'=>'btn btn-default canlcel_le']); ?>
+									<?php echo $this->Html->link('Back to transactions', ['controller'=>'transactions', 'action' => 'mytransactions'], ['class'=>'btn btn-default canlcel_le']); ?>
 							</div>
 							
 							

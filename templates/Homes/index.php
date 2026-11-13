@@ -2,51 +2,6 @@
 
 	<!-- animated particle canvas -->
 	<canvas id="hp-particles" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;"></canvas>
-	<script>
-	(function(){
-		var canvas = document.getElementById('hp-particles');
-		var ctx = canvas.getContext('2d');
-		var particles = [];
-		var count = 70;
-
-		function resize(){
-			canvas.width = canvas.offsetWidth;
-			canvas.height = canvas.offsetHeight;
-		}
-		window.addEventListener('resize', resize);
-		resize();
-
-		for(var i=0; i<count; i++){
-			particles.push({
-				x: Math.random()*canvas.width,
-				y: Math.random()*canvas.height,
-				r: Math.random()*2+0.5,
-				dx: (Math.random()-0.5)*0.4,
-				dy: (Math.random()-0.5)*0.4,
-				alpha: Math.random()*0.5+0.1
-			});
-		}
-
-		function draw(){
-			ctx.clearRect(0,0,canvas.width,canvas.height);
-			particles.forEach(function(p){
-				ctx.beginPath();
-				ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-				ctx.fillStyle = 'rgba(120,160,255,'+p.alpha+')';
-				ctx.fill();
-				p.x += p.dx;
-				p.y += p.dy;
-				if(p.x<0) p.x=canvas.width;
-				if(p.x>canvas.width) p.x=0;
-				if(p.y<0) p.y=canvas.height;
-				if(p.y>canvas.height) p.y=0;
-			});
-			requestAnimationFrame(draw);
-		}
-		draw();
-	})();
-	</script>
-
 	<!-- background wave decorations -->
 	<div class="hp-wave hp-wave-left">
 		<?php echo $this->Html->image('front/left-element.png'); ?>

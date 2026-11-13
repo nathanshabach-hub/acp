@@ -13,6 +13,9 @@
 			</div>
 
 			<h2 class="mt-3">Submit Group Event</h2>
+            <?php if (!empty($combinedTeam)): ?>
+                <p class="alert alert-info">This is one shared submission for both schools. Either school can update it. Existing uploaded files are kept unless replaced.</p>
+            <?php endif; ?>
 
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form">
@@ -47,7 +50,7 @@
 				<div class="form-group">
 					<label for="event_document">Upload File</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->input('Eventsubmissions.event_document', ['id' => 'event_document', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control required', 'onchange' => 'imageValidation()']); ?>
+						<?php echo $this->Form->input('Eventsubmissions.event_document', ['id' => 'event_document', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control' . (empty($eventsubmissions->mediafile_file_system_name) ? ' required' : ''), 'onchange' => 'imageValidation()']); ?>
 						<span class="help_text">mp3, mp4, mpeg, mov, avi, amr, ape, nmf, 3gp, pdf, doc, docx, png, jpg, jpeg, ppt and pptx files allowed.</span>
 					</div>
 				</div>
@@ -63,7 +66,7 @@
 				<div class="form-group">
 					<label for="event_document">Report</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->input('Eventsubmissions.report', ['id' => 'report', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control required', 'onchange' => 'imageValidationReport()']); ?>
+						<?php echo $this->Form->input('Eventsubmissions.report', ['id' => 'report', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control' . (empty($eventsubmissions->report) ? ' required' : ''), 'onchange' => 'imageValidationReport()']); ?>
 						<span class="help_text">mp3, pdf, doc, docx, png, jpg, jpeg, ppt and pptx files allowed.</span>
 					</div>
 				</div>
@@ -101,7 +104,7 @@
 				<div class="form-group">
 					<label for="event_document">Score Sheet</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->input('Eventsubmissions.score_sheet', ['id' => 'score_sheet', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control required', 'onchange' => 'imageValidationSS()']); ?>
+						<?php echo $this->Form->input('Eventsubmissions.score_sheet', ['id' => 'score_sheet', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control' . (empty($eventsubmissions->score_sheet) ? ' required' : ''), 'onchange' => 'imageValidationSS()']); ?>
 						<span class="help_text">mp3, pdf, doc, docx, png, jpg, jpeg, ppt and pptx files allowed.</span>
 					</div>
 				</div>
@@ -117,7 +120,7 @@
 				<div class="form-group">
 					<label for="event_document">Additional Document</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->input('Eventsubmissions.additional_documents', ['id' => 'additional_documents', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control required', 'onchange' => 'imageValidationAD()']); ?>
+						<?php echo $this->Form->input('Eventsubmissions.additional_documents', ['id' => 'additional_documents', 'label' => false, 'type' => 'file', 'div' => false, 'class' => 'form-control' . (empty($eventsubmissions->additional_documents) ? ' required' : ''), 'onchange' => 'imageValidationAD()']); ?>
 						<span class="help_text">mp3, pdf, doc, docx, png, jpg, jpeg, ppt and pptx files allowed.</span>
 					</div>
 				</div>
@@ -132,10 +135,10 @@
 				<div class="form-group">
 					<label for="name">Choose Book(s)</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' => 'Choose', 'multiple' => 'multiple']); ?>
+						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'multiple' => 'multiple']); ?>
 						<script>
 							$(document).ready(function () {
-								$('#book_ids').select2();
+								$('#book_ids').select2({ placeholder: 'Choose book(s)', width: '100%' });
 							});
 						</script>
 					</div>

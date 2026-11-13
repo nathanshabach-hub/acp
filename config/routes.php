@@ -52,6 +52,10 @@ return static function (RouteBuilder $routes): void {
     });
 
     // Front end routing
+    $routes->connect('/reports', ['controller' => 'Reports', 'action' => 'index']);
+    $routes->connect('/scripture', ['controller' => 'Scripture', 'action' => 'index']);
+    $routes->connect('/reports/students/{studentId}', ['controller' => 'Reports', 'action' => 'student'])
+        ->setPass(['studentId']);
     // Public root should load the site home page; the portal login remains a dedicated route.
     $routes->connect('/', ['controller' => 'homes', 'action' => 'index']);
     //$routes->connect('/pages/*', ['controller' => 'Pages', 'action' => 'display']);

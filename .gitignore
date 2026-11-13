@@ -1,6 +1,10 @@
 /vendor/*
 /vendors/
 /config/app.php
+/config/deployment.local.php
+/config/deployment.demo.php
+/config/deployment.live.php
+/config/password_reset.local.php
 /tmp/*
 /logs/*
 /.local-mysql/
@@ -8,7 +12,10 @@
 /.tmp/
 /Backup/
 /webroot/error_log
-/webroot/files/
+/webroot/files/*
+!/webroot/files/guidelines/
+/webroot/files/guidelines/*
+!/webroot/files/guidelines/*.pdf
 /webroot/uploads/
 
 # local editor/session and shell artifacts

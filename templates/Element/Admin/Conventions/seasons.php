@@ -32,6 +32,7 @@
             .a-warn { color: #8b6612; background: #fff5d9; border-color: #f3e6b5; }
             .a-danger { color: #a53a3a; background: #ffe9ed; border-color: #f7ced6; }
             .grp-controls { flex: 1; min-width: 0; }
+            .grp-controls form { display: inline; }
             .grp-controls .delete-float { float: right; margin-left: 8px; }
 
             @media (max-width: 1280px) {
@@ -48,7 +49,6 @@
             }
         </style>
         <div class="ersu_message"> <?php echo $this->Flash->render() ?></div>
-        <?php echo $this->Form->create(null, ['id' => 'actionFrom', 'method' => 'post']); ?>
         <section id="no-more-tables" class="lstng-section">
             <div class="topn">
                 <div class="topn_left">Seasons List</div>
@@ -84,7 +84,7 @@
                         }
                     }
                     $submissionsOpen = ((int)$submissionsRaw === 1);
-                    $resultsReleased = ((int)$datarecord->results_release !== 0);
+                    $resultsReleased = in_array($datarecord->results_release, [1, '1'], true);
                     ?>
                     <div class="cs-card">
                         <div class="cs-card-head">
@@ -132,6 +132,10 @@
                                 <span class="lbl">Supervisor</span>
                                 <span class="val fee"><?php echo number_format($datarecord->supervisor_registration_fees, 2); ?></span>
                             </div>
+                            <div class="m">
+                                <span class="lbl">Judges Registration</span>
+                                <span class="val fee"><?= $datarecord->judge_registration_fees === null ? 'Not set' : number_format((float)$datarecord->judge_registration_fees, 2) ?></span>
+                            </div>
                         </div>
 
                         <div class="cs-actions">
@@ -164,8 +168,8 @@
                                     <?php if (!$isSquadAdmin) { echo $this->Html->link('<i class="fa fa-user-secret"></i> Judges', ['controller' => 'conventions', 'action' => 'judges', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-info', 'title' => 'Judges List']); } ?>
                                     <?php if (!$isSquadAdmin) { echo $this->Html->link('<i class="fa fa-gavel"></i> Broken Records', ['controller' => 'conventions', 'action' => 'brokenrecordcertificate', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-primary', 'title' => 'Broken Record Certificate']); } ?>
                                     <?php if (!$isSquadAdmin) { echo $this->Html->link('<i class="fa fa-certificate"></i> Certificates', ['controller' => 'conventions', 'action' => 'certificates', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-primary', 'title' => 'Certificates']); } ?>
-                                    <?php if (!$isSquadAdmin && (int)$datarecord->results_release === 0) { echo $this->Html->link('<i class="fa fa-eye"></i> Results Released', ['controller' => 'conventions', 'action' => 'seasonresultrelease', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-info', 'title' => 'Release Result', 'confirm' => 'Are you sure you want to release results ?']); } ?>
-                                    <?php if (!$isSquadAdmin && (int)$datarecord->results_release !== 0) { echo $this->Html->link('<i class="fa fa-eye-slash"></i> Hide Results', ['controller' => 'conventions', 'action' => 'seasonresultreleasestop', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-warn', 'title' => 'Stop Release Result', 'confirm' => 'Are you sure you want to stop release results ?']); } ?>
+                                    <?php if (!$isSquadAdmin && !$resultsReleased) { echo $this->Form->postButton('<i class="fa fa-eye"></i> Results Released', ['controller' => 'conventions', 'action' => 'seasonresultrelease', $datarecord->slug, $slug], ['escapeTitle' => false, 'class' => 'btn-act a-info', 'title' => 'Release Result', 'confirm' => 'Are you sure you want to release results?', 'form' => ['class' => 'd-inline']]); } ?>
+                                    <?php if (!$isSquadAdmin && $resultsReleased) { echo $this->Form->postButton('<i class="fa fa-eye-slash"></i> Hide Results', ['controller' => 'conventions', 'action' => 'seasonresultreleasestop', $datarecord->slug, $slug], ['escapeTitle' => false, 'class' => 'btn-act a-warn', 'title' => 'Stop Release Result', 'confirm' => 'Are you sure you want to stop release results?', 'form' => ['class' => 'd-inline']]); } ?>
                                     <?php if (!$isSquadAdmin) { echo $this->Html->link('<i class="fa fa-lock"></i> '.($submissionsOpen ? 'Lock Submissions' : 'Unlock Submissions'), ['controller' => 'conventions', 'action' => 'togglesubmissions', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-warn', 'title' => 'Lock / Unlock Submissions']); } ?>
                                     <?php if (!$isSquadAdmin) { echo $this->Html->link('<i class="fa fa-trash-o"></i> Delete', ['controller' => 'conventions', 'action' => 'deleteconventionsseason', $datarecord->slug, $slug], ['escape' => false, 'class' => 'btn-act a-danger delete-float action-list delete-list', 'title' => 'Delete Season', 'confirm' => 'Are you sure you want to Delete ?']); } ?>
                                 </div>
@@ -176,8 +180,6 @@
             </div>
         </section>
 
-        <?php echo $this->Form->end(); ?>
-    
     </div>
 <?php } else { ?>
     <div id="listingJS" style="display: none;" class="alert alert-success alert-block fade in"></div>

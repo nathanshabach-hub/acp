@@ -7,8 +7,6 @@ $(document).ready(function () {
 	<div class="row">
 		<?php echo $this->element('user_left_menu'); ?>
 		<main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 profile-edit-page">
-			<h2 class="mt-3 profile-page-title">Edit Profile</h2>
-			  
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form profile-edit-form">
 				<h2 class="form-title">Edit Profile</h2>

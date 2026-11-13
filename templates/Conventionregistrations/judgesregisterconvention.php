@@ -2,61 +2,43 @@
 	$(document).ready(function () {
 		$("#judgeregister").validate();
 		var jrPageSize = 20;
-		var jrCurrentPage = 1;
+		$('.jr-accordion').each(function () {
+			var section = $(this);
+			var currentPage = 1;
 
-		function jrGetFilteredRows() {
-			var query = $.trim($('#jrEventSearch').val()).toLowerCase();
-			return $('.jr-table tbody tr').filter(function () {
-				var code = $.trim($(this).find('td:eq(1)').text()).toLowerCase();
-				var eventName = $.trim($(this).find('td:eq(2)').text()).toLowerCase();
-				return query === '' || code.indexOf(query) !== -1 || eventName.indexOf(query) !== -1;
+			function renderRows() {
+				var query = $.trim(section.find('.jr-search').val()).toLowerCase();
+				var rows = section.find('.jr-table tbody tr');
+				var filtered = rows.filter(function () {
+					return query === '' || $.trim($(this).find('td:eq(1)').text()).toLowerCase().indexOf(query) !== -1
+						|| $.trim($(this).find('td:eq(2)').text()).toLowerCase().indexOf(query) !== -1;
+				});
+				var total = filtered.length;
+				var pages = Math.max(1, Math.ceil(total / jrPageSize));
+				currentPage = Math.min(currentPage, pages);
+				var start = (currentPage - 1) * jrPageSize;
+				rows.hide();
+				filtered.slice(start, start + jrPageSize).show();
+				section.find('.jr-no-results').toggle(total === 0);
+				section.find('.jr-prev').prop('disabled', currentPage === 1 || total === 0);
+				section.find('.jr-next').prop('disabled', currentPage >= pages || total === 0);
+				section.find('.jr-page-info').text(total === 0 ? 'Showing 0 of 0'
+					: 'Showing ' + (start + 1) + '-' + Math.min(start + jrPageSize, total) + ' of ' + total);
+			}
+
+			section.find('.jr-search').on('input', function () {
+				currentPage = 1;
+				renderRows();
 			});
-		}
-
-		function jrRenderRows() {
-			var filteredRows = jrGetFilteredRows();
-			var totalRows = filteredRows.length;
-			var totalPages = Math.max(1, Math.ceil(totalRows / jrPageSize));
-
-			if (jrCurrentPage > totalPages) {
-				jrCurrentPage = totalPages;
-			}
-
-			var startIndex = (jrCurrentPage - 1) * jrPageSize;
-			var endIndex = startIndex + jrPageSize;
-
-			$('.jr-table tbody tr').hide();
-			filteredRows.slice(startIndex, endIndex).show();
-
-			$('#jrNoResults').toggle(totalRows === 0);
-			$('#jrPrevBtn').prop('disabled', jrCurrentPage === 1 || totalRows === 0);
-			$('#jrNextBtn').prop('disabled', jrCurrentPage >= totalPages || totalRows === 0);
-
-			if (totalRows === 0) {
-				$('#jrPageInfo').text('Showing 0 of 0');
-			} else {
-				$('#jrPageInfo').text('Showing ' + (startIndex + 1) + '-' + Math.min(endIndex, totalRows) + ' of ' + totalRows);
-			}
-		}
-
-		$('#jrEventSearch').on('input', function () {
-			jrCurrentPage = 1;
-			jrRenderRows();
+			section.find('.jr-prev').on('click', function () {
+				if (currentPage > 1) { currentPage--; renderRows(); }
+			});
+			section.find('.jr-next').on('click', function () {
+				currentPage++;
+				renderRows();
+			});
+			renderRows();
 		});
-
-		$('#jrPrevBtn').on('click', function () {
-			if (jrCurrentPage > 1) {
-				jrCurrentPage--;
-				jrRenderRows();
-			}
-		});
-
-		$('#jrNextBtn').on('click', function () {
-			jrCurrentPage++;
-			jrRenderRows();
-		});
-
-		jrRenderRows();
 
 		$('#judgeregister').on('submit', function () {
 			$(this).find('.jr-generated-event').remove();
@@ -86,7 +68,7 @@
 	margin-bottom: 16px;
 	box-shadow: 0 8px 20px rgba(30, 70, 120, 0.08);
 }
-.jr-title {
+.user-portal .jr-title {
 	margin: 0;
 	font-size: 24px;
 	line-height: 1.25;
@@ -138,6 +120,67 @@
 	display: flex;
 	justify-content: flex-end;
 	margin-bottom: 10px;
+}
+.jr-accordion {
+	border: 1px solid #dfe6ee;
+	border-radius: 8px;
+	margin-bottom: 12px;
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	background: #fff;
+}
+.jr-accordion > summary {
+	cursor: pointer;
+	padding: 11px 14px;
+	font-weight: 700;
+	color: #1f3a56;
+	background: #f6f9fc;
+	border-bottom: 1px solid #e4ebf3;
+	list-style: none;
+	transition: background-color .3s ease, color .3s ease;
+}
+.jr-accordion > summary::-webkit-details-marker {
+	display: none;
+}
+.jr-accordion > summary::after {
+	content: '+';
+	float: right;
+	font-weight: 700;
+	transition: transform .3s ease, color .3s ease;
+}
+.jr-accordion[open] > summary::after {
+	content: '-';
+}
+.jr-accordion > summary:hover {
+	background: #eaf2fb;
+	color: #123458;
+}
+.jr-accordion > summary:hover::after {
+	transform: scale(1.1);
+	color: #0f2e4a;
+}
+.jr-accordion[open] > summary:hover::after {
+	transform: rotate(90deg);
+}
+.jr-accordion > summary:focus-visible {
+	outline: 3px solid #4d86bd;
+	outline-offset: -3px;
+}
+.jr-accordion-locked {
+	padding: 11px 14px;
+	font-weight: 700;
+	color: #596b7d;
+	background: #f6f9fc;
+}
+.jr-lock-message {
+	margin: 0;
+	padding: 10px 14px;
+	color: #596b7d;
+}
+.jr-accordion-content {
+	padding: 10px 12px 12px;
 }
 .jr-search {
 	max-width: 360px;
@@ -282,6 +325,79 @@
 	margin-top: 14px;
 }
 
+html[data-portal-theme="dark"] .user-portal .jr-header {
+	background: #1b2c38;
+	border-color: var(--portal-line);
+	box-shadow: none;
+}
+html[data-portal-theme="dark"] .user-portal .jr-title {
+	color: var(--portal-ink);
+}
+html[data-portal-theme="dark"] .user-portal .jr-subtitle {
+	color: var(--portal-muted);
+}
+html[data-portal-theme="dark"] .user-portal .jr-page .alert-info {
+	background: #29434e;
+	border-color: #526a7c;
+	color: #c1e8ff;
+}
+html[data-portal-theme="dark"] .user-portal .jr-accordion,
+html[data-portal-theme="dark"] .user-portal .jr-table-wrap {
+	background: #1b2c38;
+	border-color: var(--portal-line);
+}
+html[data-portal-theme="dark"] .user-portal .jr-accordion > summary,
+html[data-portal-theme="dark"] .user-portal .jr-accordion-locked {
+	background: #293e4c;
+	border-color: var(--portal-line);
+	color: var(--portal-ink);
+}
+html[data-portal-theme="dark"] .user-portal .jr-accordion > summary:hover {
+	background: #29434e;
+	color: #fff;
+}
+html[data-portal-theme="dark"] .user-portal .jr-accordion > summary:hover::after {
+	color: #fff;
+}
+html[data-portal-theme="dark"] .user-portal :is(.jr-lock-message, .jr-help, .jr-page-info) {
+	color: var(--portal-muted);
+}
+html[data-portal-theme="dark"] .user-portal .jr-search {
+	background: #142530;
+	border-color: var(--portal-line);
+	color: var(--portal-ink) !important;
+}
+html[data-portal-theme="dark"] .user-portal .jr-search::placeholder {
+	color: var(--portal-muted);
+}
+html[data-portal-theme="dark"] .user-portal .jr-search:focus {
+	border-color: #72d6c6;
+}
+html[data-portal-theme="dark"] .user-portal .jr-table .jr-event-name {
+	color: var(--portal-ink);
+}
+html[data-portal-theme="dark"] .user-portal .jr-table tbody tr.jr-event-full > td {
+	background: #51332f;
+	color: #ffd2c9;
+	box-shadow: none;
+}
+html[data-portal-theme="dark"] .user-portal .jr-table tbody tr.jr-event-full:hover > td {
+	background: #633d38;
+}
+html[data-portal-theme="dark"] .user-portal .jr-no-results {
+	background: #493d25;
+	border-color: #967e4c;
+	color: #ffe2a3;
+}
+html[data-portal-theme="dark"] .user-portal .jr-page-btn {
+	background: #293e4c;
+	border-color: #8195a5;
+	color: var(--portal-ink);
+}
+html[data-portal-theme="dark"] .user-portal .jr-page-btn:hover:not(:disabled) {
+	background: #3b5365;
+}
+
 @media (max-width: 767px) {
 	.jr-title {
 		font-size: 20px;
@@ -323,13 +439,37 @@
 			</div>
 
 			<!-- dashboard-section-3 start-->
+            <?php if (isset($judgeRegistrationFee)): ?>
+                <p class="alert alert-info">Judges Registration: <?= h(CURR) ?> <?= number_format((float)$judgeRegistrationFee, 2) ?>. Saving your events creates an invoice request for admin. An existing request is reused; payment and judge approval remain separate.</p>
+            <?php endif; ?>
 			<div class="dashboard-form jr-form-card">
-				<?php echo $this->Form->create($conventionregistrations, ['id' => 'judgeregister', 'type' => 'file', 'class' => ' ']); ?>
+				<?php echo $this->Form->create(null, ['id' => 'judgeregister', 'type' => 'file', 'class' => ' ']); ?>
 
 				<div class="form-group">
 					<label for="name" class="jr-section-label">Choose Events of Interest</label>
+					<?php
+					$eventGroups = ['pre' => [], 'in_person' => []];
+					foreach ($eventsList as $eventrec) {
+						$divisionName = (string)($eventrec->Divisions['name'] ?? '');
+						$group = \App\Utility\JudgingEventCategories::isPreJudged($divisionName, (string)$eventrec->event_name) ? 'pre' : 'in_person';
+						$eventGroups[$group][] = $eventrec;
+					}
+					$selectedJudgeEventIds = isset($selectedJudgeEventIds) && is_array($selectedJudgeEventIds) ? $selectedJudgeEventIds : [];
+					$selectedInterestEventIds = isset($selectedInterestEventIds) && is_array($selectedInterestEventIds) ? $selectedInterestEventIds : [];
+					$eventJudgeCounts = isset($eventJudgeCounts) && is_array($eventJudgeCounts) ? $eventJudgeCounts : [];
+					foreach (['pre' => 'Pre-Judged Events', 'in_person' => 'In-Person Events'] as $group => $groupLabel):
+					?>
+					<?php if ($group === 'in_person' && !$inPersonEventsOpen): ?>
+					<div class="jr-accordion">
+						<div class="jr-accordion-locked"><?= h($groupLabel) ?> (<?= count($eventGroups[$group]) ?>) - Locked</div>
+						<p class="jr-lock-message">The In-Person Events will be available once the schedule has been run.</p>
+					</div>
+					<?php else: ?>
+					<details class="jr-accordion">
+						<summary><?= h($groupLabel) ?> (<?= count($eventGroups[$group]) ?>)</summary>
+						<div class="jr-accordion-content">
 					<div class="jr-toolbar">
-						<input type="text" id="jrEventSearch" class="jr-search" placeholder="Search by code or event name" autocomplete="off" />
+						<input type="search" class="jr-search" aria-label="Search <?= h($groupLabel) ?>" placeholder="Search by code or event name" autocomplete="off" />
 					</div>
 					<div class="input jr-table-wrap">
 						<table class="table table-bordered table-striped jr-table">
@@ -346,12 +486,8 @@
 							</thead>
 							<tbody>
 							<?php
-							$selectedJudgeEventIds = isset($selectedJudgeEventIds) && is_array($selectedJudgeEventIds) ? $selectedJudgeEventIds : [];
-							$selectedInterestEventIds = isset($selectedInterestEventIds) && is_array($selectedInterestEventIds) ? $selectedInterestEventIds : [];
-							$eventJudgeCounts = isset($eventJudgeCounts) && is_array($eventJudgeCounts) ? $eventJudgeCounts : [];
-							$eventsList = isset($eventsList) ? $eventsList : [];
 							$counter = 0;
-							foreach ($eventsList as $eventrec) {
+							foreach ($eventGroups[$group] as $eventrec) {
 								$counter++;
 								$eid = (int)$eventrec->id;
 								$isChecked = in_array($eid, $selectedJudgeEventIds);
@@ -394,14 +530,18 @@
 							</tbody>
 						</table>
 					</div>
-					<div id="jrNoResults" class="jr-no-results">No events match your search.</div>
+					<div class="jr-no-results">No events match your search.</div>
 					<div class="jr-pagination">
-						<div id="jrPageInfo" class="jr-page-info">Showing 0 of 0</div>
+						<div class="jr-page-info" aria-live="polite">Showing 0 of 0</div>
 						<div class="jr-page-actions">
-							<button type="button" id="jrPrevBtn" class="jr-page-btn">Previous</button>
-							<button type="button" id="jrNextBtn" class="jr-page-btn">Next</button>
+							<button type="button" class="jr-page-btn jr-prev">Previous</button>
+							<button type="button" class="jr-page-btn jr-next">Next</button>
 						</div>
 					</div>
+						</div>
+					</details>
+					<?php endif; ?>
+					<?php endforeach; ?>
 					<span class='help_text jr-help'><small>Note: not all events will be allocated to you. Events are allocated on a needs basis and we do take into consideration event workload.</small></span>
 				</div>
 

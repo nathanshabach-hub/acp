@@ -31,7 +31,9 @@ $borderColor 	= '#5d0b0d';
 					<i class="simpletextt" style="font-family: arial; font-size: 16px; margin-top: 0px; padding: 0px; margin-bottom: 0px;">
 					in affiliation with </i>
 					<div><i style="font-size: 34px; padding: 26px 0px 8px; display: block; font-weight: 500; font-family: arial;">Accelerate Christian Education <span style="font-size: 22px; position: relative; top: -10px; right: 5px;">&reg;</span></i></div>
-					<span style="padding-top: 26px; font-size: 16px; display: block; width: 100%; font-style: italic;">takes pleasure in presenting this Award to</span>
+					<span style="padding-top: 26px; font-size: 16px; display: block; width: 100%; font-style: italic;">
+						<?php echo (($arrCertData['result_label'] ?? '') === 'Runner-Up') ? 'takes pleasure in presenting this Runner-Up Award to' : 'takes pleasure in presenting this Award to'; ?>
+					</span>
 					
 					<!--<div style="height: 425px;">ddddd</div>-->
 					

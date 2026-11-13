@@ -33,6 +33,7 @@ class AdvertisementsController extends AppController {
     }
 
     private function getLatLng($location) {
+        \App\Deployment\SafetyPolicy::assertIntegrationAllowed('geocoding');
         if (empty($location)) {
             return [];
         }

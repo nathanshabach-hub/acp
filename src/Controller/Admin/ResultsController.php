@@ -3,6 +3,7 @@
 namespace App\Controller\Admin;
 
 use App\Controller\AppController;
+use App\Service\GuidelineBreachPolicy;
 use Cake\Core\Configure;
 use Cake\Core\Configure\Engine\PhpConfig;
 use Cake\Datasource\ConnectionManager;
@@ -10,6 +11,28 @@ use Cake\Datasource\ConnectionManager;
 #[\AllowDynamicProperties]
 class ResultsController extends AppController {
 	private const BIBLE_BOWL_OPEN_MIN_PLACE_SCORE = 10;
+
+	private function excludeAcceptedBreachPositions($query, int $conventionSeasonId)
+	{
+		$acceptedSubmissionIds = $this->Eventsubmissions->find()
+			->select(['id'])
+			->where([
+				'Eventsubmissions.conventionseason_id' => $conventionSeasonId,
+				'Eventsubmissions.guideline_breach' => GuidelineBreachPolicy::STATUS_ACCEPTED,
+			])
+			->all()
+			->extract('id')
+			->toList();
+
+		if (!empty($acceptedSubmissionIds)) {
+			$query->where(['OR' => [
+				['Resultpositions.eventsubmission_id IS' => null],
+				['Resultpositions.eventsubmission_id NOT IN' => $acceptedSubmissionIds],
+			]]);
+		}
+
+		return $query;
+	}
 
     public array $paginate = ['limit' => 50, 'order' => ['Conventions.name' => 'asc']];
 
@@ -57,7 +80,8 @@ class ResultsController extends AppController {
 			->contain(['Users', 'Combineduser'])
 			->all();
 
-		return $this->buildCombinedSchoolLabelsFromRequests($requests);
+		return (new \App\Service\CombinedTeams($this->Combinerequests->getConnection()))->groupLabels((int)$conventionSeasonId, (int)$eventId)
+            + $this->buildCombinedSchoolLabelsFromRequests($requests);
 	}
 
 	private function buildCombinedSchoolLabelsFromRequests($requests): array
@@ -66,6 +90,9 @@ class ResultsController extends AppController {
 		$parents = [];
 		$schoolNames = [];
 		foreach ($requests as $request) {
+            if ($request->combined_team_id) {
+                continue;
+            }
 			$sourceId = (int)$request->user_id;
 			$targetId = (int)$request->combine_with_user_id;
 			if ($sourceId <= 0 || $targetId <= 0) {
@@ -145,7 +172,8 @@ class ResultsController extends AppController {
 		}
 
 		foreach ($filteredEventIds as $eventId) {
-			$labelsByEvent[$eventId] = $this->buildCombinedSchoolLabelsFromRequests($requestsByEvent[$eventId] ?? []);
+			$labelsByEvent[$eventId] = (new \App\Service\CombinedTeams($this->Combinerequests->getConnection()))->groupLabels((int)$conventionSD->id, $eventId)
+                + $this->buildCombinedSchoolLabelsFromRequests($requestsByEvent[$eventId] ?? []);
 		}
 		$this->set('combinedSchoolLabelsByEvent', $labelsByEvent);
 	}
@@ -192,6 +220,22 @@ class ResultsController extends AppController {
 		}
 
 		if (!empty($timedEventIds)) {
+			$eligibleSubmissionIds = $this->Eventsubmissions->find()
+				->select(['id'])
+				->where([
+					'Eventsubmissions.conventionseason_id' => (int)$conventionSD->id,
+					'Eventsubmissions.event_id IN' => array_keys($timedEventIds),
+					'OR' => [
+						['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+						['Eventsubmissions.guideline_breach IS' => null],
+					],
+				])
+				->all()
+				->extract('id')
+				->toList();
+			$eligibleEvaluationCondition = $eligibleSubmissionIds
+				? ['Judgeevaluations.eventsubmission_id IN' => $eligibleSubmissionIds]
+				: ['Judgeevaluations.id IS' => null];
 			$evaluations = $this->Judgeevaluations->find()
 				->select(['event_id', 'time_score'])
 				->where([
@@ -203,6 +247,7 @@ class ResultsController extends AppController {
 					'Judgeevaluations.withdraw_yes_no !=' => 1,
 					'Judgeevaluations.time_score IS NOT' => null,
 				])
+				->where($eligibleEvaluationCondition)
 				->order(['Judgeevaluations.event_id' => 'ASC', 'Judgeevaluations.time_score' => 'ASC'])
 				->all();
 
@@ -258,6 +303,10 @@ class ResultsController extends AppController {
 				'Eventsubmissions.season_id' => $conventionSD->season_id,
 				'Eventsubmissions.season_year' => $conventionSD->season_year,
 				'Eventsubmissions.event_id' => $eventD->id,
+				'OR' => [
+					['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+					['Eventsubmissions.guideline_breach IS' => null],
+				],
 			])
 			->contain(['Students'])
 			->all();
@@ -295,6 +344,37 @@ class ResultsController extends AppController {
 		}
 
 		return $savedCount;
+	}
+
+	private function placeEligibleSubmissionIds($conventionSD, $eventD): array
+	{
+		$ids = $this->Eventsubmissions->find()
+			->select(['id'])
+			->where([
+				'Eventsubmissions.conventionseason_id' => (int)$conventionSD->id,
+				'Eventsubmissions.convention_id' => (int)$conventionSD->convention_id,
+				'Eventsubmissions.season_id' => (int)$conventionSD->season_id,
+				'Eventsubmissions.season_year' => (int)$conventionSD->season_year,
+				'Eventsubmissions.event_id' => (int)$eventD->id,
+				'OR' => [
+					['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+					['Eventsubmissions.guideline_breach IS' => null],
+				],
+			])
+			->all()
+			->extract('id')
+			->toList();
+
+		return array_map('intval', $ids);
+	}
+
+	private function placeEligibleEvaluationCondition($conventionSD, $eventD): array
+	{
+		$submissionIds = $this->placeEligibleSubmissionIds($conventionSD, $eventD);
+
+		return $submissionIds
+			? ['Judgeevaluations.eventsubmission_id IN' => $submissionIds]
+			: ['Judgeevaluations.id IS' => null];
 	}
 
 	private function isSilverAppleEvent($eventD)
@@ -480,6 +560,10 @@ class ResultsController extends AppController {
 				'Eventsubmissions.season_id' => $conventionSD->season_id,
 				'Eventsubmissions.season_year' => $conventionSD->season_year,
 				'Eventsubmissions.student_id IN' => $studentIds,
+				'OR' => [
+					['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+					['Eventsubmissions.guideline_breach IS' => null],
+				],
 			])
 			->contain(['Events' => function($q){
 				return $q->select(['Events.id', 'Events.event_name']);
@@ -506,7 +590,7 @@ class ResultsController extends AppController {
 			$profiles[$studentId]['scripture'][$bucket] += $verses;
 		}
 
-		$resultRows = $this->Resultpositions->find()
+		$resultRows = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
 			->select([
 				'Resultpositions.student_id',
 				'Resultpositions.group_name',
@@ -725,7 +809,7 @@ class ResultsController extends AppController {
 		$arrAllResults = [];
 		$divisionRollupMap = $this->getDivisionRollupMap();
 		$singleMemberLookup = $this->getSingleMemberGroupLookup($conventionSD);
-		$allResultsConventionSeason = $this->Resultpositions->find()->where([
+		$allResultsConventionSeason = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)->where([
 			'Resultpositions.conventionseason_id' => $conventionSD->id,
 			'Resultpositions.convention_id' => $conventionSD->convention_id,
 			'Resultpositions.season_id' => $conventionSD->season_id,
@@ -773,7 +857,7 @@ class ResultsController extends AppController {
 		$tambourineGroupEventIds = $this->Events->find()
 			->select(['id'])
 			->where(['Events.division_id' => 8, 'Events.group_event_yes_no' => 1, 'Events.event_name LIKE' => '%Tambourine%'])
-			->enableHydration(false)->extract('id')->toList();
+			->enableHydration(false)->all()->extract('id')->toList();
 
 		$studentSoloDivs = [];
 		$instrumentalEventSets = [];
@@ -976,7 +1060,7 @@ class ResultsController extends AppController {
 			$divisionNames[$divisionId] = $divisionName;
 		}
 
-		$allResultsConventionSeason = $this->Resultpositions->find()->where([
+		$allResultsConventionSeason = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)->where([
 			'Resultpositions.conventionseason_id' => $conventionSD->id,
 			'Resultpositions.convention_id' => $conventionSD->convention_id,
 			'Resultpositions.season_id' => $conventionSD->season_id,
@@ -1223,6 +1307,10 @@ class ResultsController extends AppController {
 				'Eventsubmissions.season_id'           => $conventionSD->season_id,
 				'Eventsubmissions.season_year'         => $conventionSD->season_year,
 				'Eventsubmissions.event_id'            => $eventD->id,
+				'OR' => [
+					['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+					['Eventsubmissions.guideline_breach IS' => null],
+				],
 			])
 			->contain(['Students'])
 			->all();
@@ -1327,7 +1415,10 @@ class ResultsController extends AppController {
 		if($checkResultsAlready)
 		{
 			// to fetch result positions based on already saved results
-			$resultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'DESC'])->all();
+			$resultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'DESC'])
+				->all();
 			foreach($resultsPos as $resultp)
 			{
 				$arrAlreadySavedResults[$resultp->eventsubmission_id]['position'] 				= $resultp->position;
@@ -1339,7 +1430,16 @@ class ResultsController extends AppController {
 		$this->set('arrAlreadySavedResults',$arrAlreadySavedResults);
 		
 		// to get total number of entries for this event in this conv season
-		$eventSubmissionsCS 		= $this->Eventsubmissions->find()->where(['Eventsubmissions.conventionseason_id' => $conventionSD->id,'Eventsubmissions.convention_id' => $conventionSD->convention_id,'Eventsubmissions.season_id' => $conventionSD->season_id,'Eventsubmissions.season_year' => $conventionSD->season_year,'Eventsubmissions.event_id' => $eventD->id])->contain(['Users','Students'])->all();
+		$eventSubmissionsCS = $this->Eventsubmissions->find()
+			->where([
+				'Eventsubmissions.conventionseason_id' => $conventionSD->id,
+				'Eventsubmissions.convention_id' => $conventionSD->convention_id,
+				'Eventsubmissions.season_id' => $conventionSD->season_id,
+				'Eventsubmissions.season_year' => $conventionSD->season_year,
+				'Eventsubmissions.event_id' => $eventD->id,
+			])
+			->contain(['Users','Students'])
+			->all();
 		$this->set('eventSubmissionsCS', $eventSubmissionsCS);
 		
 		// to save results
@@ -1404,6 +1504,12 @@ class ResultsController extends AppController {
 				}
 				if ($avgMarksSub === null && $existingPositionRecord && $existingPositionRecord->avg_marks !== null) {
 					$avgMarksSub = (float)$existingPositionRecord->avg_marks;
+				}
+				if (GuidelineBreachPolicy::isExcludedFromResults($datarecord)) {
+					continue;
+				}
+				if (!GuidelineBreachPolicy::canPlace($datarecord)) {
+					$positionSub = null;
 				}
 
 				if($positionSub !== null && $positionSub>=1 && $positionSub<=6)
@@ -1530,7 +1636,10 @@ class ResultsController extends AppController {
 					'Eventsubmissions.season_id' => (int)$conventionSD->season_id,
 					'Eventsubmissions.season_year' => (int)$conventionSD->season_year,
 					'Eventsubmissions.event_id' => (int)$eventD->id,
-					'Eventsubmissions.guideline_breach !=' => 2,
+					'OR' => [
+						['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+						['Eventsubmissions.guideline_breach IS' => null],
+					],
 				])
 				->all();
 
@@ -1703,6 +1812,10 @@ class ResultsController extends AppController {
 					'Eventsubmissions.season_id' => (int)$conventionSD->season_id,
 					'Eventsubmissions.season_year' => (int)$conventionSD->season_year,
 					'Eventsubmissions.event_id' => (int)$eventD->id,
+					'OR' => [
+						['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+						['Eventsubmissions.guideline_breach IS' => null],
+					],
 				])
 				->contain(['Students'])
 				->all();
@@ -1767,7 +1880,20 @@ class ResultsController extends AppController {
 		$lastResultPositionRow = $this->Resultpositions->find()->select(['id'])->order(['id' => 'DESC'])->first();
 		$nextResultPositionId = $lastResultPositionRow ? ((int)$lastResultPositionRow->id + 1) : 1;
 		
-		$eventSubmissionsCS 		= $this->Eventsubmissions->find()->where(['Eventsubmissions.conventionseason_id' => $conventionSD->id,'Eventsubmissions.convention_id' => $conventionSD->convention_id,'Eventsubmissions.season_id' => $conventionSD->season_id,'Eventsubmissions.season_year' => $conventionSD->season_year,'Eventsubmissions.event_id' => $eventD->id])->contain(['Users','Students'])->all();
+		$eventSubmissionsCS = $this->Eventsubmissions->find()
+			->where([
+				'Eventsubmissions.conventionseason_id' => $conventionSD->id,
+				'Eventsubmissions.convention_id' => $conventionSD->convention_id,
+				'Eventsubmissions.season_id' => $conventionSD->season_id,
+				'Eventsubmissions.season_year' => $conventionSD->season_year,
+				'Eventsubmissions.event_id' => $eventD->id,
+				'OR' => [
+					['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+					['Eventsubmissions.guideline_breach IS' => null],
+				],
+			])
+			->contain(['Users','Students'])
+			->all();
 		
 		foreach($eventSubmissionsCS as $datarecord)
 		{
@@ -1999,7 +2125,9 @@ class ResultsController extends AppController {
 		// to get all Resultpositions of this convention season
 		$arrAllResults = array();
 		$divisionRollupMap = $this->getDivisionRollupMap();
-		$allResultsConventionSeason 		= $this->Resultpositions->find()->where(['Resultpositions.conventionseason_id' => $conventionSD->id,'Resultpositions.convention_id' => $conventionSD->convention_id,'Resultpositions.season_id' => $conventionSD->season_id,'Resultpositions.season_year' => $conventionSD->season_year,'Resultpositions.points_obtained >' => 0])->order(['Resultpositions.id' => 'ASC'])->all();
+		$allResultsConventionSeason = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+			->where(['Resultpositions.conventionseason_id' => $conventionSD->id,'Resultpositions.convention_id' => $conventionSD->convention_id,'Resultpositions.season_id' => $conventionSD->season_id,'Resultpositions.season_year' => $conventionSD->season_year,'Resultpositions.points_obtained >' => 0])
+			->order(['Resultpositions.id' => 'ASC'])->all();
 		if(!$allResultsConventionSeason->isEmpty())
 		{
 			//$this->prx($allResultsConventionSeason);
@@ -2048,7 +2176,7 @@ class ResultsController extends AppController {
 			$tambourineGroupEventIds = $this->Events->find()
 				->select(['id'])
 				->where(['Events.division_id' => 8, 'Events.group_event_yes_no' => 1, 'Events.event_name LIKE' => '%Tambourine%'])
-				->enableHydration(false)->extract('id')->toList();
+				->enableHydration(false)->all()->extract('id')->toList();
 
 			$studentSoloDivs = [];
 			$instrumentalEventSets = [];
@@ -2274,7 +2402,9 @@ class ResultsController extends AppController {
 			}
 			$divisionNames[$divisionId] = $divisionName;
 		}
-		$allResultsConventionSeason 		= $this->Resultpositions->find()->where(['Resultpositions.conventionseason_id' => $conventionSD->id,'Resultpositions.convention_id' => $conventionSD->convention_id,'Resultpositions.season_id' => $conventionSD->season_id,'Resultpositions.season_year' => $conventionSD->season_year,'Resultpositions.points_obtained >' => 0])->order(['Resultpositions.points_obtained' => 'ASC'])->all();
+		$allResultsConventionSeason = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+			->where(['Resultpositions.conventionseason_id' => $conventionSD->id,'Resultpositions.convention_id' => $conventionSD->convention_id,'Resultpositions.season_id' => $conventionSD->season_id,'Resultpositions.season_year' => $conventionSD->season_year,'Resultpositions.points_obtained >' => 0])
+			->order(['Resultpositions.points_obtained' => 'ASC'])->all();
 		if(!$allResultsConventionSeason->isEmpty())
 		{
 			//$this->prx($allResultsConventionSeason);
@@ -2286,7 +2416,7 @@ class ResultsController extends AppController {
 				if (!isset($combinedSchoolLabelsByEvent[$eventId])) {
 					$combinedSchoolLabelsByEvent[$eventId] = $this->getApprovedCombinedSchoolLabels($conventionSD->id, $eventId);
 				}
-				$combinedSchoolLabel = $combinedSchoolLabelsByEvent[$eventId][(int)$allresultcs->user_id] ?? null;
+				$combinedSchoolLabel = $combinedSchoolLabelsByEvent[$eventId]['group:' . $allresultcs->group_name] ?? $combinedSchoolLabelsByEvent[$eventId][(int)$allresultcs->user_id] ?? null;
 				$divisionId = $this->normalizeDivisionIdForManualArts(
 					(int)($allresultcs->division_id ?? 0),
 					(string)($allresultcs->event_id_number ?? '')
@@ -2407,7 +2537,7 @@ class ResultsController extends AppController {
 			$groupMembersCache = [];
 
 			// Fetch all 1st-6th placed result positions directly (division_id is on the table)
-			$placedRPs = $this->Resultpositions->find()
+			$placedRPs = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
 				->where([
 					'Resultpositions.conventionseason_id' => $conventionSD->id,
 					'Resultpositions.convention_id'       => $conventionSD->convention_id,
@@ -2536,7 +2666,10 @@ class ResultsController extends AppController {
 					'Eventsubmissions.convention_id' => $conventionSD->convention_id,
 					'Eventsubmissions.season_id' => $conventionSD->season_id,
 					'Eventsubmissions.season_year' => $conventionSD->season_year,
-					'Eventsubmissions.guideline_breach !=' => 2,
+					'OR' => [
+						['Eventsubmissions.guideline_breach !=' => GuidelineBreachPolicy::STATUS_ACCEPTED],
+						['Eventsubmissions.guideline_breach IS' => null],
+					],
 				])
 				->all();
 
@@ -2935,7 +3068,7 @@ class ResultsController extends AppController {
 					}
 				}
 
-				$schoolName = trim((string)($ovpos->Users['first_name'] ?? ''));
+				$schoolName = $combinedSchoolLabels['group:' . $ovpos->group_name] ?? trim((string)($ovpos->Users['first_name'] ?? ''));
 				$positionLabel = ((int)$ovpos->position === 1) ? '1st' : (((int)$ovpos->position === 2) ? '2nd' : '3rd');
 
 				fputcsv($fp, [
@@ -3015,12 +3148,13 @@ class ResultsController extends AppController {
 
 			$seenCombinedEntries = [];
 			foreach ($overallpositions as $ovpos) {
-				$combinedSchoolLabel = $combinedSchoolLabels[(int)$ovpos->user_id] ?? null;
+				$combinedSchoolLabel = $combinedSchoolLabels['group:' . $ovpos->group_name] ?? $combinedSchoolLabels[(int)$ovpos->user_id] ?? null;
 				if ($combinedSchoolLabel !== null) {
-					if (isset($seenCombinedEntries[$combinedSchoolLabel])) {
+                    $combinedKey = isset($combinedSchoolLabels['group:' . $ovpos->group_name]) ? 'group:' . $ovpos->group_name : $combinedSchoolLabel;
+					if (isset($seenCombinedEntries[$combinedKey])) {
 						continue;
 					}
-					$seenCombinedEntries[$combinedSchoolLabel] = true;
+					$seenCombinedEntries[$combinedKey] = true;
 				}
 				$showName = '';
 				if ((int)$ovpos->student_id > 0) {
@@ -3158,7 +3292,11 @@ class ResultsController extends AppController {
 		$condEval[] 	= "(Judgeevaluations.season_id = '".$conventionSD->season_id."')";
 		$condEval[] 	= "(Judgeevaluations.event_id = '".$eventD->id."')";
 		$condEval[] 	= "(Judgeevaluations.withdraw_yes_no != '1')";
-		$judgeEvals = $this->Judgeevaluations->find()->where($condEval)->contain(['Students'])->all();
+		$judgeEvals = $this->Judgeevaluations->find()
+			->where($condEval)
+			->where($this->placeEligibleEvaluationCondition($conventionSD, $eventD))
+			->contain(['Students'])
+			->all();
 
 		$timeToMilliseconds = static function ($timeValue) {
 			if ($timeValue === null || $timeValue === '') {
@@ -3331,7 +3469,11 @@ class ResultsController extends AppController {
 			$result_id = $checkResultsAlready->id;
 			
 			// to fetch result positions based on already saved results
-			$allResultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'ASC'])->contain(['Users','Students'])->all();
+			$allResultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'ASC'])
+				->contain(['Users','Students'])
+				->all();
 			$resultsPos = [];
 			$resultPositionInputIds = [];
 			foreach ($allResultsPos as $resultPosition) {
@@ -3504,7 +3646,11 @@ class ResultsController extends AppController {
 		$condEval[] 	= "(Judgeevaluations.season_id = '".$conventionSD->season_id."')";
 		$condEval[] 	= "(Judgeevaluations.event_id = '".$eventD->id."')";
 		$condEval[] 	= "(Judgeevaluations.withdraw_yes_no != '1')";
-		$judgeEvalsRaw = $this->Judgeevaluations->find()->where($condEval)->contain(['Students'])->all();
+		$judgeEvalsRaw = $this->Judgeevaluations->find()
+			->where($condEval)
+			->where($this->placeEligibleEvaluationCondition($conventionSD, $eventD))
+			->contain(['Students'])
+			->all();
 		$distanceToMillimeters = static function ($distanceValue) {
 			if ($distanceValue === null || $distanceValue === '') {
 				return null;
@@ -3735,7 +3881,11 @@ class ResultsController extends AppController {
 			$result_id = $checkResultsAlready->id;
 
 			// to fetch result positions based on already saved results
-			$resultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'ASC'])->contain(['Users','Students'])->all();
+			$resultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'ASC'])
+				->contain(['Users','Students'])
+				->all();
 			$this->set('resultsPos', $resultsPos);
 			
 			$this->set('checkResultsAlready',$checkResultsAlready);
@@ -3884,7 +4034,12 @@ class ResultsController extends AppController {
 		$condEval[] 	= "(Judgeevaluations.event_id = '".$eventD->id."')";
 		$condEval[] 	= "(Judgeevaluations.withdraw_yes_no != '1')";
 		$condEval[] 	= "(Judgeevaluations.all_pos_score >0)";
-		$judgeEvals = $this->Judgeevaluations->find()->where($condEval)->contain(['Students'])->order(["Judgeevaluations.all_pos_score" => "DESC"])->all();
+		$judgeEvals = $this->Judgeevaluations->find()
+			->where($condEval)
+			->where($this->placeEligibleEvaluationCondition($conventionSD, $eventD))
+			->contain(['Students'])
+			->order(["Judgeevaluations.all_pos_score" => "DESC"])
+			->all();
 		//$this->prx($judgeEvals);
 		
 		$requiresBibleBowlThreshold = $this->isBibleBowlOpenMinScoreEvent($eventD);
@@ -4025,7 +4180,11 @@ class ResultsController extends AppController {
 			$result_id = $checkResultsAlready->id;
 
 			// to fetch result positions based on already saved results
-			$resultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'ASC'])->contain(["Users","Students"])->all();
+			$resultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'ASC'])
+				->contain(["Users","Students"])
+				->all();
 			$this->set('resultsPos',$resultsPos);
 			
 			$this->set('checkResultsAlready',$checkResultsAlready);
@@ -4172,7 +4331,12 @@ class ResultsController extends AppController {
 		$condEval[] 	= "(Judgeevaluations.event_id = '".$eventD->id."')";
 		$condEval[] 	= "(Judgeevaluations.withdraw_yes_no != '1')";
 		$condEval[] 	= "(Judgeevaluations.soccer_kick_best_kick >10)";
-		$judgeEvals = $this->Judgeevaluations->find()->where($condEval)->contain(['Students'])->all()->toList();
+		$judgeEvals = $this->Judgeevaluations->find()
+			->where($condEval)
+			->where($this->placeEligibleEvaluationCondition($conventionSD, $eventD))
+			->contain(['Students'])
+			->all()
+			->toList();
 		usort($judgeEvals, function ($left, $right) {
 			$distanceComparison = (int)$right->soccer_kick_best_kick <=> (int)$left->soccer_kick_best_kick;
 			return $distanceComparison !== 0 ? $distanceComparison : ((int)$left->id <=> (int)$right->id);
@@ -4414,7 +4578,11 @@ class ResultsController extends AppController {
 			$result_id = $checkResultsAlready->id;
 
 			// to fetch result positions based on already saved results
-			$resultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'ASC'])->contain(['Students','Users'])->all();
+			$resultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'ASC'])
+				->contain(['Students','Users'])
+				->all();
 			$this->set('resultsPos', $resultsPos);
 			
 			$this->set('checkResultsAlready', $checkResultsAlready);
@@ -4559,7 +4727,12 @@ class ResultsController extends AppController {
 		$condEval[] 	= "(Judgeevaluations.event_id = '".$eventD->id."')";
 		$condEval[] 	= "(Judgeevaluations.withdraw_yes_no != '1')";
 		$condEval[] 	= "(Judgeevaluations.spelling_score >0)";
-		$judgeEvals = $this->Judgeevaluations->find()->where($condEval)->contain(['Students'])->order(["Judgeevaluations.spelling_score" => "DESC"])->all();
+		$judgeEvals = $this->Judgeevaluations->find()
+			->where($condEval)
+			->where($this->placeEligibleEvaluationCondition($conventionSD, $eventD))
+			->contain(['Students'])
+			->order(["Judgeevaluations.spelling_score" => "DESC"])
+			->all();
 		//$this->prx($judgeEvals);
 		
 		$cntrRecord = 1;
@@ -4689,7 +4862,11 @@ class ResultsController extends AppController {
 			$result_id = $checkResultsAlready->id;
 
 			// to fetch result positions based on already saved results
-			$resultsPos 		= $this->Resultpositions->find()->where(['Resultpositions.result_id' => $checkResultsAlready->id])->order(['Resultpositions.position' => 'ASC'])->contain(['Students','Users'])->all();
+			$resultsPos = $this->excludeAcceptedBreachPositions($this->Resultpositions->find(), (int)$conventionSD->id)
+				->where(['Resultpositions.result_id' => $checkResultsAlready->id])
+				->order(['Resultpositions.position' => 'ASC'])
+				->contain(['Students','Users'])
+				->all();
 			$this->set('resultsPos', $resultsPos);
 		}
 		else
@@ -5017,6 +5194,7 @@ class ResultsController extends AppController {
 		$arrCertData['student_name'] 	= $studentD->first_name.' '.$studentD->last_name;
 		$arrCertData['school_name'] 	= $studentD->Schools['first_name'];
 		$arrCertData['points'] 			= $points;
+		$arrCertData['result_label'] 	= (string)$this->request->getQuery('result', '');
 		
 		//$this->prx($arrCertData);
 		

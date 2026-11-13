@@ -32,6 +32,8 @@
                     <li class="<?php if(isset($manageEventCategories)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> Categories', ['controller'=>'eventcategories', 'action' => 'index'], ['escape'=>false]); ?></li>
                     <li class="<?php if(isset($manageDivisions)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> Divisions', ['controller'=>'divisions', 'action' => 'index'], ['escape'=>false]); ?></li>
                     <li class="<?php if(isset($eventList)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> List Events', ['controller'=>'events', 'action' => 'index'], ['escape'=>false]); ?></li>
+                    <li class="<?php if(isset($manageGlobalQualifyingRecords)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> Qualifying Times & Records', ['controller'=>'events', 'action' => 'qualifyingrecords'], ['escape'=>false]); ?></li>
+                    <li class="<?php if(isset($manageEvents) && isset($manageGlobalRooms)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> Manage Rooms', ['controller'=>'conventions', 'action' => 'globalrooms'], ['escape'=>false]); ?></li>
                     <li class="<?php if(isset($eventAdd)){ echo 'active';} ?>"><?php echo $this->Html->link('<i class="fa fa-circle-o"></i> Add Event', ['controller'=>'events', 'action' => 'add'], ['escape'=>false]); ?></li>
                 </ul>
             </li>

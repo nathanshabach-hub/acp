@@ -44,9 +44,9 @@ class PaginatorHelper extends Helper
     /**
      * List of helpers used by this helper
      *
-     * @var array
+     * @var array<int|string, array<string, mixed>|string>
      */
-    public $helpers = ['Url', 'Number', 'Html'];
+    public array $helpers = ['Url', 'Number', 'Html'];
 
     /**
      * Default config for this class
@@ -64,9 +64,9 @@ class PaginatorHelper extends Helper
      *
      * Templates: the templates used by this class
      *
-     * @var array
+     * @var array<string, mixed>
      */
-    protected $_defaultConfig = [
+    protected array $_defaultConfig = [
         'options' => [],
         'templates' => [
             'nextActive' => '<li class="next"><a rel="next" href="{{url}}">{{text}}</a></li>',
@@ -661,8 +661,12 @@ class PaginatorHelper extends Helper
             'end' => $end
         ]);
 
+        $modelLabel = '';
+        if (is_string($options['model']) && $options['model'] !== '') {
+            $modelLabel = strtolower(Inflector::humanize(Inflector::tableize($options['model'])));
+        }
         $map += [
-            'model' => strtolower(Inflector::humanize(Inflector::tableize($options['model'])))
+            'model' => $modelLabel,
         ];
         return $this->templater()->format($template, $map);
     }

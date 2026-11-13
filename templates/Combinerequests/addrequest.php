@@ -1,12 +1,20 @@
 <script type="text/javascript">
 	$(document).ready(function () {
 		$("#addrequest").validate();
-		$('#event_id').on('change', function () {
-			var eventId = $(this).val() || '';
+		$('#event_id, #combine_with_user_id').on('change', function () {
+			var eventId = $('#event_id').val() || '';
+            var partnerId = $('#combine_with_user_id').val() || '';
 			var targetUrl = '<?php echo $this->Url->build(['controller' => 'combinerequests', 'action' => 'addrequest']); ?>';
+            var query = [];
 			if (eventId !== '') {
-				targetUrl += '?event_id=' + encodeURIComponent(eventId);
+				query.push('event_id=' + encodeURIComponent(eventId));
 			}
+            if (partnerId !== '') {
+                query.push('partner_id=' + encodeURIComponent(partnerId));
+            }
+            if (query.length) {
+                targetUrl += '?' + query.join('&');
+            }
 			window.location.href = targetUrl;
 		});
 	});
@@ -164,7 +172,7 @@
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form cr-addrequest-card">
 				<h2 class="cr-addrequest-title">Combined Team or Group Event Request</h2>
-				<p class="cr-addrequest-subtitle">Choose an event, pick the partner school, then tick registered students.</p>
+				<p class="cr-addrequest-subtitle">After agreeing with the other school, select students from both schools. Admin approves the whole team once. Either school can upload the shared submission; no separate partner-school request is needed.</p>
 				<?php echo $this->Form->create($combinerequests, ['id' => 'addrequest', 'type' => 'file', 'class' => 'cr-addrequest-form']); ?>
 
 				<div class="form-group">
@@ -192,7 +200,7 @@
 				</div>
 				
 				<div class="form-group">
-					<label for="name">Student Name/s</label>
+					<label>Your school's students</label>
 					<div class="input">
 						<?php if ((int)$selectedEventId <= 0) { ?>
 							<p class="cr-student-empty">Please choose an event to load registered students.</p>
@@ -210,6 +218,30 @@
 						<?php } ?>
 					</div>
 				</div>
+
+                <div class="form-group">
+                    <label>Partner school's students</label>
+                    <div class="input">
+                        <?php if (!$selectedEventId || !$selectedCombineWithUserId): ?>
+                            <p class="cr-student-empty">Choose the event and partner school first.</p>
+                        <?php elseif (!$partnerRegisteredStudents): ?>
+                            <p class="cr-student-empty">No active students are registered for this event at the partner school.</p>
+                        <?php else: ?>
+                            <div class="cr-student-list">
+                                <?php foreach ($partnerRegisteredStudents as $student): ?>
+                                    <label class="cr-student-item">
+                                        <input type="checkbox" name="partner_student_ids[]" value="<?= (int)$student['id'] ?>" <?= in_array((string)$student['id'], array_map('strval', $selectedPartnerStudentIds), true) ? 'checked' : '' ?>>
+                                        <?= h(trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name'])) ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="combined-agreement">School agreement</label>
+                    <label class="cr-student-item"><input id="combined-agreement" type="checkbox" name="agreement_confirmed" value="1" required> Both schools have agreed to this team and to either school uploading its shared submission.</label>
+                </div>
 
 				<div class="form-group form-btns">
 					<label></label>

@@ -25,9 +25,8 @@
     })            
 </script>
 <?php
-use Cake\ORM\TableRegistry;
-$this->Evaluationquestions = TableRegistry::getTableLocator()->get('Evaluationquestions');
 $isSquadAdmin = (strtolower((string)$this->request->getSession()->read('admin_username')) === 'squad');
+$evaluationQuestionsById = isset($evaluationQuestionsById) && is_array($evaluationQuestionsById) ? $evaluationQuestionsById : [];
 ?>
 <div class="admin_loader" id="loaderID"><?php echo $this->Html->image('loader_large_blue.gif');?></div>
 <?php
@@ -287,11 +286,15 @@ $rowsToRender = isset($judgeEvaluationRows) && is_array($judgeEvaluationRows)
                     <table class="table table-bordered">
                         <tr><td colspan="4">Comments: <?php echo $datarecord->comments ?: 'N/A'; ?></td></tr>
                         <tr><td>#</td><td>Question</td><td>Max</td><td>Obtained</td></tr>
-                        <?php $cntrQ = 1; foreach($datarecord->Judgeevaluationmarks as $judgevalmark) { 
-                            $questionD = $this->Evaluationquestions->find()->where(["Evaluationquestions.id" => $judgevalmark->question_id])->first(); ?>
+                        <?php $cntrQ = 1; foreach($datarecord->Judgeevaluationmarks as $judgevalmark) {
+                            $questionText = (string)($evaluationQuestionsById[(int)$judgevalmark->question_id] ?? '');
+                            if ($questionText === '') {
+                                $questionText = 'Question #' . (int)$judgevalmark->question_id;
+                            }
+                        ?>
                         <tr>
                             <td><?php echo $cntrQ++; ?></td>
-                            <td><?php echo $questionD->question; ?></td>
+                            <td><?php echo h($questionText); ?></td>
                             <td><?php echo $judgevalmark->question_marks_possible; ?></td>
                             <td><?php echo $judgevalmark->question_marks_obtained; ?></td>
                         </tr>

@@ -27,6 +27,8 @@ $applicantMustProvide = isset($squad247Data['applicant_must_provide']) && is_arr
 $blueCardRequirement = trim((string)($squad247Data['blue_card_requirement'] ?? 'For Australian/NZ conventions, Australian volunteers at Australian conventions must hold an approved Blue Card (or the relevant state Working With Children approval). Applicants can apply via bluecard.qld.gov.au.'));
 $paymentOptions = trim((string)($squad247Data['payment_options'] ?? 'Once the application is received, specific payment details are sent based on the country selected.'));
 $conventionSubtitle = trim((string)($squad247Data['convention_subtitle'] ?? 'Regional Student Conventions 2025'));
+$conventionDatesMessage = trim((string)($squad247Data['convention_dates_message'] ?? ''));
+$conventionDatesMessageEnabled = !empty($squad247Data['convention_dates_message_enabled']);
 if ($conventionSubtitle === '') {
     $conventionSubtitle = 'Regional Student Conventions 2025';
 }
@@ -126,6 +128,9 @@ if ($conventionSubtitle === '') {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
     margin-bottom: 20px;
+}
+.s247-grid--message {
+    grid-template-columns: 1fr;
 }
 .s247-box {
     border: 1px solid #dbe5f7;
@@ -576,10 +581,10 @@ if ($conventionSubtitle === '') {
 <section class="s247-wrap">
     <canvas id="s247-particles" class="s247-particles"></canvas>
     <div class="s247-wave s247-wave-left">
-        <img src="/img/front/left-element.png" alt="">
+        <img src="<?= h(HTTP_PATH . '/img/front/left-element.png') ?>" alt="">
     </div>
     <div class="s247-wave s247-wave-right">
-        <img src="/img/front/ryt-element.png" alt="">
+        <img src="<?= h(HTTP_PATH . '/img/front/ryt-element.png') ?>" alt="">
     </div>
     <div class="container">
         <div class="s247-card">
@@ -594,9 +599,12 @@ if ($conventionSubtitle === '') {
                 <a class="s247-step" href="#s247-step-6" data-step-target="s247-step-6">5. Declaration</a>
             </div>
 
-            <div class="s247-grid">
+            <div class="s247-grid<?php echo $conventionDatesMessageEnabled ? ' s247-grid--message' : ''; ?>">
                 <div class="s247-box">
                     <h4 class="s247-box-title s247-box-title--dates">Convention Dates</h4>
+                    <?php if ($conventionDatesMessageEnabled && $conventionDatesMessage !== '') { ?>
+                        <p class="s247-dates-message"><?php echo nl2br(h($conventionDatesMessage)); ?></p>
+                    <?php } else { ?>
                     <ul class="s247-list">
                         <?php foreach ($regionsLeft as $row) { ?>
                             <li><?php echo h(($row['name'] ?? '') . ': ' . ($row['dates'] ?? '')); ?></li>
@@ -605,7 +613,9 @@ if ($conventionSubtitle === '') {
                             <li><?php echo h(($row['name'] ?? '') . ': ' . ($row['dates'] ?? '')); ?></li>
                         <?php } ?>
                     </ul>
+                    <?php } ?>
                 </div>
+                <?php if (!$conventionDatesMessageEnabled) { ?>
                 <div class="s247-box">
                     <h4 class="s247-box-title s247-box-title--fees">Convention Fees</h4>
                     <ul class="s247-list">
@@ -614,6 +624,7 @@ if ($conventionSubtitle === '') {
                         <?php } ?>
                     </ul>
                 </div>
+                <?php } ?>
             </div>
 
             <div class="s247-copy-block">
@@ -723,7 +734,7 @@ if ($conventionSubtitle === '') {
                         <div class="full">
                             <div class="s247-checkgrid">
                                 <?php foreach ($fees as $idx => $feeRow) { ?>
-                                    <label><input type="checkbox" data-required-group="conventions" style="width:auto; margin-right:6px;" <?php if ($idx === 0) { ?>checked<?php } ?>><?php echo h(($feeRow['name'] ?? '') . ' (' . ($feeRow['amount'] ?? '') . ')'); ?></label>
+                                    <label><input type="checkbox" data-required-group="conventions" style="width:auto; margin-right:6px;" <?php if ($idx === 0) { ?>checked<?php } ?>><?php echo h(($feeRow['name'] ?? '') . ($conventionDatesMessageEnabled ? '' : ' (' . ($feeRow['amount'] ?? '') . ')')); ?></label>
                                 <?php } ?>
                             </div>
                         </div>
@@ -859,60 +870,6 @@ if ($conventionSubtitle === '') {
 
 <script>
 (function(){
-    var canvas = document.getElementById('s247-particles');
-    var ctx = canvas ? canvas.getContext('2d') : null;
-    var particles = [];
-    var count = 70;
-
-    function resizeCanvas(){
-        if (!canvas) return;
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-    }
-
-    function initParticles(){
-        if (!canvas || !ctx) return;
-        particles = [];
-        for (var i = 0; i < count; i++) {
-            particles.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                r: Math.random() * 2 + 0.5,
-                dx: (Math.random() - 0.5) * 0.4,
-                dy: (Math.random() - 0.5) * 0.4,
-                alpha: Math.random() * 0.5 + 0.1
-            });
-        }
-    }
-
-    function drawParticles(){
-        if (!canvas || !ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        particles.forEach(function(p){
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(120,160,255,' + p.alpha + ')';
-            ctx.fill();
-            p.x += p.dx;
-            p.y += p.dy;
-            if (p.x < 0) p.x = canvas.width;
-            if (p.x > canvas.width) p.x = 0;
-            if (p.y < 0) p.y = canvas.height;
-            if (p.y > canvas.height) p.y = 0;
-        });
-        requestAnimationFrame(drawParticles);
-    }
-
-    if (canvas && ctx) {
-        resizeCanvas();
-        initParticles();
-        window.addEventListener('resize', function(){
-            resizeCanvas();
-            initParticles();
-        });
-        drawParticles();
-    }
-
     function setDisplay(elements, show) {
         Array.prototype.forEach.call(elements, function(el) {
             el.style.display = show ? '' : 'none';

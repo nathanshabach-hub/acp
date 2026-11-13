@@ -8,6 +8,7 @@ use Cake\Core\Configure;
 use Cake\Core\Configure\Engine\PhpConfig;
 use Cake\Utility\Security;
 use App\Utility\LegacyEmail as Email;
+use App\Service\GuidelineBreachPolicy;
 use Cake\I18n\I18n;
 
 #[\AllowDynamicProperties]
@@ -84,6 +85,10 @@ class JudgeevaluationsController extends AppController {
 		
 		// to get eventsubmission details
 		$eventsubmissionD 	= $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(["Users","Students"])->first();
+		if ($eventsubmissionD && !GuidelineBreachPolicy::canJudge($eventsubmissionD)) {
+			$this->Flash->error('Events Team has accepted a breach that prevents further judging.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevents', $conv_reg_slug]);
+		}
 		$this->set('eventsubmissionD', $eventsubmissionD);
 		$event_id_number_raw = (string)$eventsubmissionD->event_id_number;
 		$event_id_number 	= $event_id_number_raw;
@@ -309,6 +314,10 @@ class JudgeevaluationsController extends AppController {
 					$results[] = ['localId' => $localId, 'ok' => false, 'error' => 'Submission not found'];
 					continue;
 				}
+				if (!GuidelineBreachPolicy::canJudge($eventsubmissionD)) {
+					$results[] = ['localId' => $localId, 'ok' => false, 'error' => 'Events Team accepted a breach that prevents further judging'];
+					continue;
+				}
 
 				$event_id_number = str_pad((string)$eventsubmissionD->event_id_number, 3, '0', STR_PAD_LEFT);
 
@@ -487,6 +496,14 @@ class JudgeevaluationsController extends AppController {
 		
 		// to get eventsubmission details
 		$eventsubmissionD 	= $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(["Users","Students"])->first();
+		if (!$eventsubmissionD) {
+			$this->Flash->error('Event entry not found.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevents', $conv_reg_slug]);
+		}
+		if (!GuidelineBreachPolicy::canJudge($eventsubmissionD)) {
+			$this->Flash->error('Events Team has accepted a breach that prevents further judging.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevents', $conv_reg_slug]);
+		}
 		$this->set('eventsubmissionD', $eventsubmissionD);
 		$event_id_number_raw = (string)$eventsubmissionD->event_id_number;
 		$event_id_number 	= $event_id_number_raw;
@@ -514,7 +531,7 @@ class JudgeevaluationsController extends AppController {
 		if($conventionSeasonEventD && $conventionSeasonEventD->judging_ends == 1)
 		{
 			$this->Flash->error('Sorry, judging ends for this event.');
-			$this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevententries',$convRegD->slug,$eventD->slug]);
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevententries',$convRegD->slug,$eventD->slug]);
 		}
 		
 		// to check if this entry submitted for a student or a group
@@ -738,6 +755,14 @@ class JudgeevaluationsController extends AppController {
 		
 		// to get eventsubmission details
 		$eventsubmissionD 	= $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(["Users","Students"])->first();
+		if (!$eventsubmissionD) {
+			$this->Flash->error('Event entry not found.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevents', $conv_reg_slug]);
+		}
+		if (!GuidelineBreachPolicy::canJudge($eventsubmissionD)) {
+			$this->Flash->error('Events Team has accepted a breach that prevents further judging.');
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevents', $conv_reg_slug]);
+		}
 		$this->set('eventsubmissionD', $eventsubmissionD);
 		$event_id_number 	= $eventsubmissionD->event_id_number;
 		
@@ -835,24 +860,61 @@ class JudgeevaluationsController extends AppController {
 	public function markbreach($eventsubmission_slug = null) {
 		
 		$this->userLoginCheck();
+		$this->multiLoginCheck(['Teacher_Parent', 'Judge']);
 		
         $user_id = $this->request->getSession()->read("user_id");
 		$userDetails = $this->Users->find()->where(['Users.id' => $user_id])->first();
 		
 		$checkExists = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $eventsubmission_slug])->contain(["Conventionregistrations","Conventions","Users","Events","Students","Uploadeduser"])->first();
 		
-		if($checkExists)
-		{	 	
-			//$this->prx($checkExists);
-			
-			// update event entry as guideline breach
-			$breachReason = trim((string)($this->request->getData('breach_reason') ?? ''));
-			$updateData = ['guideline_breach' => '1', 'guideline_breach_by_judge_id' => $user_id, 'modified' => date("Y-m-d H:i:s")];
-			if ($breachReason !== '') {
-				$updateData['guideline_breach_reason'] = $breachReason;
+		if (!$this->request->is('post')) {
+			throw new \Cake\Http\Exception\MethodNotAllowedException('Breach submissions require POST.');
+		}
+		$breachLevel = strtolower(trim((string)$this->request->getData('breach_level')));
+		$breachReason = trim((string)$this->request->getData('breach_reason'));
+		if (!GuidelineBreachPolicy::validLevel($breachLevel) || $breachReason === '') {
+			$this->Flash->error('Select a breach level and enter a comment before submitting.');
+			if ($checkExists) {
+				return $this->redirect([
+					'controller' => 'conventionregistrations',
+					'action' => 'judgeevententries',
+					$checkExists->Conventionregistrations['slug'],
+					$checkExists->Events['slug'],
+				]);
 			}
-			$this->Eventsubmissions->updateAll($updateData, ["slug" => $eventsubmission_slug]);
-			$this->Flash->success('Events entry successfully marked as guideline breach. Admin will review and approve/decline.');
+			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+		}
+
+		if ($checkExists && in_array((int)$checkExists->guideline_breach, [
+			GuidelineBreachPolicy::STATUS_NONE,
+			GuidelineBreachPolicy::STATUS_REJECTED,
+		], true))
+		{	 	
+			$updated = $this->Eventsubmissions->updateAll([
+				'guideline_breach' => GuidelineBreachPolicy::STATUS_PENDING,
+				'guideline_breach_by_judge_id' => $user_id,
+				'guideline_breach_reason' => $breachReason,
+				'guideline_breach_level' => $breachLevel,
+				'guideline_breach_team_response' => null,
+				'guideline_breach_display_removed' => 0,
+				'modified' => date("Y-m-d H:i:s"),
+			], [
+				'id' => (int)$checkExists->id,
+				'guideline_breach IN' => [
+					GuidelineBreachPolicy::STATUS_NONE,
+					GuidelineBreachPolicy::STATUS_REJECTED,
+				],
+			]);
+			if ($updated !== 1) {
+				$this->Flash->error("This entry's breach status changed. Refresh the entry and try again.");
+				return $this->redirect([
+					'controller' => 'conventionregistrations',
+					'action' => 'judgeevententries',
+					$checkExists->Conventionregistrations['slug'],
+					$checkExists->Events['slug'],
+				]);
+			}
+			$this->Flash->success('Guideline breach submitted to the Events Team. Judging and placement remain available until the team accepts it.');
 			
 			// now send email to admin & events team
 			$settingsD	= $this->Settings->find()->where(['Settings.id' => 1])->first();
@@ -904,16 +966,16 @@ class JudgeevaluationsController extends AppController {
 				// Email sending failed - breach has already been saved, continue
 			}
 			
-			$this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevententries',$checkExists->Conventionregistrations['slug'],$checkExists->Events['slug']]);
+			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'judgeevententries',$checkExists->Conventionregistrations['slug'],$checkExists->Events['slug']]);
 			 
 		}
 		else
 		{
-			$this->Flash->error('Please choose convention registration first.');
-			$this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+			$this->Flash->error('This entry is already awaiting review, has been accepted, or could not be found.');
+			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
 		}
 		
-		$this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+		return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
     }
 	
 	public function markcommand($eventsubmission_slug = null) {
@@ -978,6 +1040,7 @@ class JudgeevaluationsController extends AppController {
 		}
 		
 		$submissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(['Events'])->first();
+        $this->assertSharedSubmissionAccess($submissionD, $userDetails);
         $this->set('submissionD', $submissionD);
 		
 		$judgeevaluations = $this->Judgeevaluations->find()->where(["Judgeevaluations.eventsubmission_id" => $submissionD->id])->contain(['Eventsubmissions','Conventionregistrations','Conventions','Events','Students','Judge','Judgeevaluationmarks'])->order(['Judgeevaluations.id' => 'DESC'])->all();
@@ -1017,9 +1080,10 @@ class JudgeevaluationsController extends AppController {
 		}
 		
 		$submissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(['Events'])->first();
+        $this->assertSharedSubmissionAccess($submissionD, $userDetails);
         $this->set('submissionD', $submissionD);
 		
-		$evaluationD = $this->Judgeevaluations->find()->where(["Judgeevaluations.slug" => $evaulation_slug])->contain(['Eventsubmissions','Conventionregistrations','Conventions','Events','Students','Judge','Judgeevaluationmarks'])->first();
+		$evaluationD = $this->Judgeevaluations->find()->where(["Judgeevaluations.slug" => $evaulation_slug, 'Judgeevaluations.eventsubmission_id' => $submissionD->id])->contain(['Eventsubmissions','Conventionregistrations','Conventions','Events','Students','Judge','Judgeevaluationmarks'])->first();
 		$this->set('evaluationD',$evaluationD);
 		//$this->prx($evaluationD);
     }
@@ -1055,6 +1119,7 @@ class JudgeevaluationsController extends AppController {
 		}
 		
 		$submissionD = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $event_submission_slug])->contain(['Events','Students'])->first();
+        $this->assertSharedSubmissionAccess($submissionD, $userDetails);
         $this->set('submissionD', $submissionD);
 		
 		$judgeevaluations = $this->Judgeevaluations->find()->where(["Judgeevaluations.eventsubmission_id" => $submissionD->id])->contain(['Eventsubmissions','Conventionregistrations','Conventions','Events','Students','Judge','Judgeevaluationmarks'])->all();
@@ -1063,6 +1128,22 @@ class JudgeevaluationsController extends AppController {
     }
 	
 	
+    private function assertSharedSubmissionAccess($submission, $user): void
+    {
+        if (!$submission) {
+            throw new \Cake\Http\Exception\NotFoundException('Submission not found.');
+        }
+        if (!$submission->combined_team_id) {
+            return;
+        }
+        $registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+        $registration = $this->Conventionregistrations->find()->where(['Conventionregistrations.id' => $registrationId])->first();
+        $ids = (new \App\Service\CombinedTeams($this->Eventsubmissions->getConnection()))->sharedSubmissionIds($registrationId);
+        if (!$user || $user->user_type !== 'School' || !$registration || (int)$registration->user_id !== (int)$user->id || !in_array((int)$submission->id, $ids, true)) {
+            throw new \Cake\Http\Exception\ForbiddenException('This shared submission belongs to its two participating schools.');
+        }
+    }
+
 	/* Individual result package */
 	public function indrespackprint($conv_reg_student_slug=null)
 	{

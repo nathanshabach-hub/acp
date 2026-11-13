@@ -12,6 +12,22 @@
     </section>
 
     <?php $isSquadAdmin = (strtolower((string)$this->request->getSession()->read('admin_username')) === 'squad'); ?>
+    <?php if (!empty($isDeveloperAdmin)) { ?>
+    <section class="content">
+        <div class="row">
+            <div class="col-lg-3 col-xs-6">
+                <div class="small-box bg-red">
+                    <div class="inner">
+                        <h3><i class="fa fa-bug" aria-hidden="true"></i></h3>
+                        <p>Error Logs</p>
+                    </div>
+                    <div class="icon"><i class="fa fa-file-text-o"></i></div>
+                    <?php echo $this->Html->link('View logs <i class="fa fa-arrow-circle-right"></i>', ['controller' => 'admins', 'action' => 'errorlogs'], ['escape' => false, 'class' => 'small-box-footer']); ?>
+                </div>
+            </div>
+        </div>
+    </section>
+    <?php } ?>
     <?php if (!$isSquadAdmin) { ?>
     <section class="content dashboard-overview">
         <div class="dashboard-hero-card">

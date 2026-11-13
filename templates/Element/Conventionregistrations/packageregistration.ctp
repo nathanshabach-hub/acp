@@ -154,6 +154,7 @@ $hasLinkedCombinedGroupSubmission = function ($conventionRegistrationId, $eventI
                     'Conventionregistrations.conventionseason_id' => (int)$currentRegistration->conventionseason_id,
                     'Conventionregistrations.user_id IN' => $schoolIds,
                 ])
+                ->all()
                 ->extract('id')
                 ->map(static function ($id) { return (int)$id; })
                 ->toList();

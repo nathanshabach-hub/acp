@@ -36,14 +36,13 @@
 					</div>
 				</div>
 
-				<div class="cr-permforms-card" data-permission-form="adult_registration">
+				<div class="cr-permforms-card">
 					<div class="cr-permforms-card-head">
 						<h2>Adult Registration Form</h2>
 					</div>
-					<p>Adult registration and sponsorship responsibility declaration form.</p>
-					<div class="cr-permforms-submission-count">0 submissions</div>
+					<p>Preview registered supervisors and their assigned students. Approval and submission are not yet available.</p>
 					<div class="cr-permforms-actions">
-						<?php echo $this->Html->link('<i class="fa fa-file-text"></i> Open Fillable Form', ['controller' => 'conventionregistrations', 'action' => 'permissionsformadult'], ['escape' => false, 'class' => 'btn btn-outline-primary btn-sm js-permform-popup', 'data-title' => 'Adult Registration Form']); ?>
+						<?php echo $this->Html->link('<i class="fa fa-file-text"></i> Open Preview', ['controller' => 'conventionregistrations', 'action' => 'permissionsformadult'], ['escape' => false, 'class' => 'btn btn-outline-primary btn-sm js-permform-popup', 'data-title' => 'Adult Registration Form']); ?>
 					</div>
 				</div>
 			</div>
@@ -53,48 +52,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-	function getPermissionFormSubmissionMap() {
-		try {
-			return JSON.parse(localStorage.getItem('acp_permission_form_submissions') || '{}');
-		} catch (error) {
-			return {};
-		}
-	}
-
-	function updatePermissionCardCount(formKey) {
-		var card = document.querySelector('[data-permission-form="' + formKey + '"]');
-		if (!card) {
-			return;
-		}
-
-		var counter = card.querySelector('.cr-permforms-submission-count');
-		if (!counter) {
-			return;
-		}
-
-		var counts = getPermissionFormSubmissionMap();
-		var count = parseInt(counts[formKey], 10) || 0;
-		counter.textContent = count === 1 ? '1 submission' : count + ' submissions';
-		counter.classList.toggle('has-submission', count > 0);
-	}
-
-	function syncPermissionFormCounts() {
-		var cards = document.querySelectorAll('[data-permission-form]');
-		cards.forEach(function (card) {
-			var formKey = card.getAttribute('data-permission-form');
-			if (formKey) {
-				updatePermissionCardCount(formKey);
-			}
-		});
-	}
-
-	function setPermissionSubmissionCount(formKey, count) {
-		var counts = getPermissionFormSubmissionMap();
-		counts[formKey] = count;
-		localStorage.setItem('acp_permission_form_submissions', JSON.stringify(counts));
-		updatePermissionCardCount(formKey);
-	}
-
 	var links = document.querySelectorAll('.js-permform-popup');
 	links.forEach(function (link) {
 		link.addEventListener('click', function (event) {
@@ -112,16 +69,6 @@ document.addEventListener('DOMContentLoaded', function () {
 		});
 	});
 
-	window.addEventListener('permissionFormSubmitted', function (event) {
-		var formKey = event && event.detail ? event.detail.formKey : null;
-		var count = event && event.detail ? parseInt(event.detail.count, 10) : 0;
-		if (!formKey || !count) {
-			return;
-		}
-		setPermissionSubmissionCount(formKey, count);
-	});
-
-	syncPermissionFormCounts();
 });
 </script>
 

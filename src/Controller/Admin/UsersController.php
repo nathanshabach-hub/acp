@@ -263,7 +263,7 @@ class UsersController extends AppController{
         $separator = array();
         $condition = array();
         
-        $condition[] = "(Users.user_type = 'School')";
+        $condition['Users.user_type'] = 'School';
 
         $sessAdminHeaderSeasonId = (int)$this->request->getSession()->read('sess_admin_header_season_id');
         if ($sessAdminHeaderSeasonId > 0) {
@@ -280,6 +280,7 @@ class UsersController extends AppController{
                         'Conventionregistrations.season_year' => $convSeason->season_year,
                     ])
                     ->distinct(['Conventionregistrations.user_id'])
+                    ->all()
                     ->extract('user_id')
                     ->map(static function ($userId) {
                         return (int)$userId;
@@ -392,8 +393,10 @@ class UsersController extends AppController{
         
         $separator = implode("/", $separator); 
         $this->set('separator',$separator);
-        $this->paginate = ['conditions' => $condition, 'limit' => 50, 'order' => ['Users.id' => 'DESC']];
-        $users = $this->paginate($this->Users);
+        $usersQuery = $this->Users->find()
+            ->where($condition)
+            ->order(['Users.id' => 'DESC']);
+        $users = $this->paginate($usersQuery, ['limit' => 50]);
         $this->set('users', $users);
 
         $schoolIdsForPage = [];
@@ -413,7 +416,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '1'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/deactivateuser/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'deactivateuser', $slug]));
             $this->set('status', 1);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -424,7 +427,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '0'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/activateuser/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'activateuser', $slug]));
             $this->set('status', 0);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -650,6 +653,7 @@ class UsersController extends AppController{
                         'Conventionregistrations.conventionseason_id' => $convSeason->id,
                     ])
                     ->distinct(['Conventionregistrations.id'])
+                    ->all()
                     ->extract('id')
                     ->map(static function ($registrationId) {
                         return (int)$registrationId;
@@ -664,6 +668,7 @@ class UsersController extends AppController{
                             'Conventionregistrationteachers.teacher_id >' => 0,
                         ])
                         ->distinct(['Conventionregistrationteachers.teacher_id'])
+                        ->all()
                         ->extract('teacher_id')
                         ->map(static function ($teacherId) {
                             return (int)$teacherId;
@@ -822,7 +827,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '1'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/deactivateteacher/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'deactivateteacher', $slug]));
             $this->set('status', 1);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -833,7 +838,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '0'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/activateteacher/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'activateteacher', $slug]));
             $this->set('status', 0);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -858,7 +863,7 @@ class UsersController extends AppController{
         $this->set('manageTeachers', '1');
         $this->set('teacherAdd', '1');
         
-        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->combine('id', 'first_name')->toArray();
+        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->all()->combine('id', 'first_name')->toArray();
         $this->set('schoolsDD', $schoolsDD);
         
         global $genderDD;
@@ -912,7 +917,7 @@ class UsersController extends AppController{
         $this->set('manageTeachers', '1');
         $this->set('teacherList', '1');
         
-        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->combine('id', 'first_name')->toArray();
+        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->all()->combine('id', 'first_name')->toArray();
         $this->set('schoolsDD', $schoolsDD);
         
         global $genderDD;
@@ -1003,6 +1008,7 @@ class UsersController extends AppController{
                         'Conventionregistrations.conventionseason_id' => $convSeason->id,
                     ])
                     ->distinct(['Conventionregistrations.id'])
+                    ->all()
                     ->extract('id')
                     ->map(static function ($registrationId) {
                         return (int)$registrationId;
@@ -1017,6 +1023,7 @@ class UsersController extends AppController{
                             'Conventionregistrationstudents.student_id >' => 0,
                         ])
                         ->distinct(['Conventionregistrationstudents.student_id'])
+                        ->all()
                         ->extract('student_id')
                         ->map(static function ($studentId) {
                             return (int)$studentId;
@@ -1120,7 +1127,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '1'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/deactivateparent/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'deactivateparent', $slug]));
             $this->set('status', 1);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -1131,7 +1138,7 @@ class UsersController extends AppController{
         if ($slug != '') {
             $this->viewBuilder()->disableAutoLayout();
             $this->Users->updateAll(['status' => '0'], ["slug"=>$slug]);
-            $this->set('action', '/admin/users/activateparent/' . $slug);
+            $this->set('action', \Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Users', 'action' => 'activateparent', $slug]));
             $this->set('status', 0);
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin');
             $this->render('update_status');
@@ -1163,7 +1170,7 @@ class UsersController extends AppController{
         global $birthYearDD;
         $this->set('birthYearDD', $birthYearDD);
         
-        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->combine('id', 'first_name')->toArray();
+        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->all()->combine('id', 'first_name')->toArray();
         $this->set('schoolsDD', $schoolsDD);
        
         if($slug){
@@ -1363,6 +1370,7 @@ class UsersController extends AppController{
         
         $separator = array();
         $condition = array();
+        $keyword = trim((string)$this->request->getQuery('keyword', ''));
         
         $condition[] = "(Users.status = '0' OR Users.status = '1' OR Users.status = '2')";
         $condition[] = "(Users.user_type = 'Judge' OR (Users.user_type = 'Teacher_Parent' AND Users.is_judge = '1'))";
@@ -1381,6 +1389,7 @@ class UsersController extends AppController{
                         'Conventionregistrations.user_id >' => 0,
                     ])
                     ->distinct(['Conventionregistrations.user_id'])
+                    ->all()
                     ->extract('user_id')
                     ->map(static function ($userId) {
                         return (int)$userId;
@@ -1414,31 +1423,42 @@ class UsersController extends AppController{
                 }
             }
             
-            if(isset($this->request->getData()['Users']['keyword']) && $this->request->getData()['Users']['keyword']!=''){
-              $keyword = trim($this->request->getData()['Users']['keyword']); 
-            }
-        }elseif($this->request->getParam('pass')){
-            if(isset($this->request->getParam('pass', [])[0]) && $this->request->getParam('pass', [])[0]!=''){
-                $searchArr = $this->request->getParam('pass', []);
-                foreach($searchArr as $val){
-                if (strpos($val, ":") !== false) {
-                   $vars  = explode(":",$val);
-                   ${$vars[0]}   = urldecode($vars[1]);
+            $keyword = trim((string)$this->request->getData('Users.keyword', ''));
+        } else {
+            foreach ($this->request->getParam('pass', []) as $value) {
+                if (str_starts_with($value, 'keyword:')) {
+                    $keyword = trim(urldecode(substr($value, strlen('keyword:'))));
                 }
-               }
             }
         }
         
-        if (isset($keyword) && $keyword != '') {
+        if ($keyword !== '') {
              $separator[] = 'keyword:' . urlencode($keyword);
-             $condition[] = "(Users.first_name LIKE '%".addslashes($keyword)."%' OR Users.last_name LIKE '%".addslashes($keyword)."%' OR  Users.email_address LIKE '%".addslashes($keyword)."%')";
-             $this->set('keyword', $keyword);
+             $condition['OR'] = [
+                 'Users.first_name LIKE' => '%' . $keyword . '%',
+                 'Users.last_name LIKE' => '%' . $keyword . '%',
+                 'Users.email_address LIKE' => '%' . $keyword . '%',
+             ];
         }
+        $this->set('keyword', $keyword);
         
         $separator = implode("/", $separator); 
         $this->set('separator',$separator);
-        $this->paginate = ['contain'=>['Schools'],'conditions' => $condition, 'limit' => 50, 'order' => ['Users.id' => 'DESC']];
-        $this->set('users', $this->paginate($this->Users));
+        $usersQuery = $this->Users->find()
+            ->contain(['Schools'])
+            ->where($condition)
+            ->orderBy(['Users.id' => 'DESC']);
+        $users = $this->paginate($usersQuery, ['limit' => 50]);
+        // The legacy paginator helper expects CakePHP 4 paging attribute names.
+        $paging = $users->pagingParams();
+        $this->setRequest($this->getRequest()->withAttribute('paging', ['Users' => [
+            'page' => $users->currentPage(),
+            'current' => $users->count(),
+            'count' => $users->totalCount(),
+            'prevPage' => $users->hasPrevPage(),
+            'nextPage' => $users->hasNextPage(),
+        ] + $paging]));
+        $this->set('users', $users);
         if($this->request->is("ajax")){
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin/Users');
@@ -1548,7 +1568,7 @@ class UsersController extends AppController{
         $this->set('manageJudges', '1');
         $this->set('activeJudges', '1');
 
-        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->combine('id', 'first_name')->toArray();
+        $schoolsDD = $this->Users->find()->where(['Users.user_type' => 'School'])->order(['Users.first_name' => 'ASC'])->all()->combine('id', 'first_name')->toArray();
         $this->set('schoolsDD', $schoolsDD);
 
         global $genderDD;

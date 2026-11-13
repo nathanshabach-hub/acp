@@ -12,13 +12,9 @@
 				
 				<?php echo $this->Html->link('<i class="fa fa-print"></i> Print', ['controller' => 'conventionregistrations', 'action' => 'resultpackageprint'], ['escape' => false, 'class' => 'btn btn-primary', 'target' => '_blank']); ?>
 				
-				&nbsp;&nbsp;&nbsp;
+				<?php echo $this->Html->link('<i class="fa fa-user"></i> Individual Student Report', ['controller' => 'conventionregistrations', 'action' => 'resultpackageindividual'], ['escape' => false, 'class' => 'btn btn-primary']); ?>
 				
-				<?php echo $this->Html->link('<i class="fa fa-user"></i> Individual Student Report', ['controller' => 'conventionregistrations', 'action' => 'resultpackageindividual'], ['escape' => false, 'class' => 'btn btn-primary', 'style' => 'margin-right:20px;']); ?>
-				
-				&nbsp;&nbsp;&nbsp;
-				
-				<?php echo $this->Html->link('<i class="fa fa-user"></i> Individual Result Package', ['controller' => 'conventionregistrations', 'action' => 'students'], ['escape' => false, 'class' => 'btn btn-success', 'style' => 'margin-right:20px;']); ?>
+				<?php echo $this->Html->link('<i class="fa fa-user"></i> Individual Result Package', ['controller' => 'conventionregistrations', 'action' => 'students'], ['escape' => false, 'class' => 'btn btn-success']); ?>
 				
 				
 			</div>

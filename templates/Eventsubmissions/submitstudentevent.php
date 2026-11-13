@@ -114,14 +114,20 @@
 				<?php
 				if(!empty($eventD->book_ids))
 				{
+					$bookOptions = ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'multiple' => 'multiple'];
+					$proverbsId = array_search('Proverbs', $booksDD, true);
+					if ($this->request->is('get') && (string)$eventD->event_id_number === '1000'
+						&& strcasecmp(trim((string)$eventD->event_name), 'Golden Apple Award U16') === 0 && $proverbsId !== false) {
+						$bookOptions['value'] = [$proverbsId];
+					}
 				?>
 				<div class="form-group cr-es-submit-row">
 					<label for="name">Choose Book(s)</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' => 'Choose', 'multiple' => 'multiple']); ?>
+						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, $bookOptions); ?>
 						<script>
 							$(document).ready(function () {
-								$('#book_ids').select2();
+								$('#book_ids').select2({ placeholder: 'Choose book(s)', width: '100%' });
 							});
 						</script>
 					</div>

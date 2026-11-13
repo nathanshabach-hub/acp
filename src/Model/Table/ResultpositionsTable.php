@@ -36,6 +36,12 @@ class ResultpositionsTable extends Table{
             'foreignKey' => 'convention_id',
             'propertyName' => 'Conventions'
         ]);
+
+		$this->belongsTo('Eventsubmissions', [
+            'className' => 'Eventsubmissions',
+            'foreignKey' => 'eventsubmission_id',
+            'propertyName' => 'Eventsubmissions'
+        ]);
     }
     
      

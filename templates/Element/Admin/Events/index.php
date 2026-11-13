@@ -3,6 +3,16 @@
     <div class="panel-body">
         <div class="ersu_message"> <?php echo $this->Flash->render() ?></div>
         <?php echo $this->Form->create(null, ['id'=>'actionFrom', "method" => "Post"]);  ?>
+        <?php
+            $paginationUrl = [];
+            if (isset($keyword) && $keyword !== '') {
+                $paginationUrl['keyword'] = $keyword;
+            }
+            if (isset($division_id) && $division_id !== '') {
+                $paginationUrl['division_id'] = $division_id;
+            }
+            $this->Paginator->options(['url' => $paginationUrl]);
+        ?>
         <section id="no-more-tables" class="lstng-section">
             <div class="topn">
                 <div class="topn_left">Events List</div>
@@ -86,6 +96,9 @@
         <?php 
         if (isset($keyword) && $keyword != '') {
             echo $this->Form->input('Events.keyword', ['label'=>false, 'type'=>'hidden', 'value'=>$keyword]);
+        }
+        if (isset($division_id) && $division_id != '') {
+            echo $this->Form->input('Events.division_id', ['label' => false, 'type' => 'hidden', 'value' => $division_id]);
         }?>
         <?php echo $this->Form->end(); ?>
     

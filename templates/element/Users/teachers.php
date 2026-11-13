@@ -1,18 +1,19 @@
 <?php
-$users = $users ?? [];
-$separator = $separator ?? '';
+$groupLabels = ['active' => 'Active', 'archive' => 'Archive', 'inactive' => 'Inactive'];
 ?>
 <div class="admin_loader" id="loaderID"><?php echo $this->Html->image('loader_large_blue.gif');?></div>
-<?php if (count($users) > 0) { ?> 
-    <div class="panel-body">
-        
-            <?php echo $this->Form->create(null, ['id'=>'actionFrom', "method" => "Post"]);  ?>
-    <section id="no-more-tables" class="lstng-section">
-        <div class="topn">
-            <!--<div class="topn_left">Ads List</div>-->
-            <div class="topn_right ajshort" id="pagingLinks" align="right"></div>
-        </div>   
-
+<?php foreach ($groupLabels as $group => $label) {
+    $users = $supervisorGroups[$group];
+    $paging = $users->pagingParams();
+    ?>
+    <details class="supervisor-accordion">
+        <summary>
+            <span><?= h($label) ?></span>
+            <span class="supervisor-accordion-count"><?= (int)$paging['totalCount'] ?></span>
+            <i class="fa fa-chevron-down supervisor-accordion-chevron" aria-hidden="true"></i>
+        </summary>
+    <div class="supervisor-accordion-content">
+        <?php if (count($users) > 0) { ?>
         <div class="tbl-resp-listing">
             <table class="table table-bordered table-striped table-condensed cf">
                 <thead class="cf ajshort">
@@ -100,13 +101,32 @@ $separator = $separator ?? '';
                 </tbody>
             </table>
         </div>
-    </section>
-
-    <?php echo $this->Form->end(); ?>
-
-</div>
-<?php } else { ?>
-    <div id="listingJS" style="display: none;" class="alert alert-success alert-block fade in"></div>
-    <div class="admin_no_record">No record found.</div>
-<?php }
-?>
+        <?php if ($paging['pageCount'] > 1) {
+            $queryParams = $this->request->getQueryParams();
+            ?>
+            <nav class="supervisor-pagination" aria-label="<?= h($label) ?> supervisor pages">
+                <?php if ($users->hasPrevPage()) {
+                    $queryParams[$group] = ['page' => $paging['currentPage'] - 1];
+                    $url = ['controller' => 'Users', 'action' => 'teachers', '?' => $queryParams];
+                    if (!empty($keyword)) {
+                        $url[] = 'keyword:' . $keyword;
+                    }
+                    echo $this->Html->link('Previous', $url, ['class' => 'btn btn-outline-primary']);
+                } ?>
+                <span>Page <?= (int)$paging['currentPage'] ?> of <?= (int)$paging['pageCount'] ?></span>
+                <?php if ($users->hasNextPage()) {
+                    $queryParams[$group] = ['page' => $paging['currentPage'] + 1];
+                    $url = ['controller' => 'Users', 'action' => 'teachers', '?' => $queryParams];
+                    if (!empty($keyword)) {
+                        $url[] = 'keyword:' . $keyword;
+                    }
+                    echo $this->Html->link('Next', $url, ['class' => 'btn btn-outline-primary']);
+                } ?>
+            </nav>
+        <?php } ?>
+        <?php } else { ?>
+            <p class="supervisor-accordion-empty">No <?= h(strtolower($label)) ?> supervisors found.</p>
+        <?php } ?>
+    </div>
+    </details>
+<?php } ?>

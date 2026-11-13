@@ -123,10 +123,9 @@ if (!empty($eventIds)) {
 			];
 		}
 		$submissionStatsByEvent[$eventId]['total']++;
-		if ($breach !== 1) {
-			$submissionStatsByEvent[$eventId]['effective']++;
-		}
-		if ($breach === 2) {
+		$submissionStatsByEvent[$eventId]['effective']++;
+		if ($breach === \App\Service\GuidelineBreachPolicy::STATUS_ACCEPTED
+			&& !\App\Service\GuidelineBreachPolicy::canJudge($submissionRow)) {
 			$submissionStatsByEvent[$eventId]['approved_breaches']++;
 		}
 		if ($breach === 1) {
@@ -220,7 +219,7 @@ $submittableSubmissionIds = [];
 foreach ($submissionRows as $submissionRow) {
 	$submissionId = (int)$submissionRow->id;
 	$submissionEventById[$submissionId] = (int)$submissionRow->event_id;
-	if ((int)$submissionRow->guideline_breach !== 2) {
+	if (\App\Service\GuidelineBreachPolicy::canJudge($submissionRow)) {
 		$submittableSubmissionIds[] = $submissionId;
 	}
 }
@@ -540,7 +539,7 @@ foreach ($conventionseasonevents as $eventRow) {
 											$perJudgeSubmittedCount[$judgeId] = $evaluationCountsByEvent[$eventId][$judgeId] ?? 0;
 										}
 										foreach ($submissionsByEvent[$eventId] ?? [] as $submissionRow) {
-											if ((int)$submissionRow->guideline_breach === 2) {
+											if (!\App\Service\GuidelineBreachPolicy::canJudge($submissionRow)) {
 												continue;
 											}
 											$submissionId = (int)$submissionRow->id;

@@ -1,251 +1,142 @@
 <?php
-// student left menu
-if ($this->request->getSession()->read("user_id") > 0 && ($this->request->getSession()->read("user_type") == "Student"))
-{
-?>
-	<div class="sidebar-icon user-sidebar-toggle" role="button" tabindex="0" aria-label="Toggle menu"><i class="fa fa-bars"></i></div>
-	<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-blue sidebar collapse">
-		<div class="position-sticky pt-3 pb-3 sidebar-sticky">
-			<ul class="nav flex-column">
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Dashboard', ['controller' => 'users', 'action' => 'dashboard'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_dashboard) ? $active_dashboard : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Registration Checklist', ['controller' => 'conventionregistrations', 'action' => 'packageregistration'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_packageregistration) ? $active_cr_packageregistration : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Event Registration', ['controller' => 'conventionregistrations', 'action' => 'studentevents'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_studentevents) ? $active_cr_studentevents : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('My Schedule', ['controller' => 'users', 'action' => 'myschedule'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_myschedule) ? $active_myschedule : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('My Events', ['controller' => 'users', 'action' => 'myevents'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_myevents) ? $active_myevents : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Edit Profile', ['controller' => 'users', 'action' => 'editprofile'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_editprofile) ? $active_editprofile : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Change Password', ['controller' => 'users', 'action' => 'changepassword'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_changepassword) ? $active_changepassword : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Logout', ['controller' => 'users', 'action' => 'logout'], ['escape' => false, 'class' => 'nav-link']); ?>
-				</li>
-			</ul>
-		</div>
-	</nav>
-<?php
-}
-?>
+$session = $this->request->getSession();
+$userType = (string)$session->read('user_type');
+$profileType = (string)$session->read('current_session_profile_type');
+$hasConvention = $session->read('sess_selected_convention_registration_id') > 0;
+$menuGroups = [
+    'Workspace' => [
+        ['Dashboard', 'home', 'users', 'dashboard', 'active_dashboard'],
+        ['Notifications', 'bell-o', 'users', 'notifications', 'active_notifications'],
+    ],
+];
 
-<?php
-// school admin left menu
-if ($this->request->getSession()->read("user_id") > 0 && ($this->request->getSession()->read("user_type") == "School"))
-{
-?>
-	<div class="sidebar-icon user-sidebar-toggle" role="button" tabindex="0" aria-label="Toggle menu"><i class="fa fa-bars"></i></div>
-	<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-blue sidebar collapse">
-		
-		<div class="position-sticky pt-3 pb-3 sidebar-sticky">
-			<ul class="nav flex-column">
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Dashboard', ['controller' => 'users', 'action' => 'dashboard'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_dashboard) ? $active_dashboard : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Global Supervisors List', ['controller' => 'users', 'action' => 'teachers'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_teachers) ? $active_teachers : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Global Students List', ['controller' => 'users', 'action' => 'students'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_students) ? $active_students : '')]); ?>
-				</li>
-				<li class="nav-item dash-item ">
-					<?php echo $this->Html->link('Convention Registrations', ['controller' => 'conventionregistrations', 'action' => 'myregistrations'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_convention_registrations) ? $active_convention_registrations : '')]); ?>
-				</li>
-				
-				<?php
-				// to show links related to convention registrations
-				if($this->request->getSession()->read("sess_selected_convention_registration_id")>0)
-				{
-				?>
-				<hr>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Price Structure', ['controller' => 'conventionregistrations', 'action' => 'pricestructure'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_price_structure) ? $active_cr_price_structure : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Supervisor Registration', ['controller' => 'conventionregistrations', 'action' => 'teachers'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_teachers) ? $active_cr_teachers : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Registration', ['controller' => 'conventionregistrations', 'action' => 'students'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_students) ? $active_cr_students : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Event Registration', ['controller' => 'conventionregistrations', 'action' => 'studentevents'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_studentevents) ? $active_cr_studentevents : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Grouping', ['controller' => 'groups', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_studentgroups) ? $active_cr_studentgroups : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Events of the Heart', ['controller' => 'heartevents', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_eventsheart) ? $active_cr_eventsheart : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('View/Edit Event Submissions', ['controller' => 'eventsubmissions', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_eventsubmission) ? $active_cr_eventsubmission : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Registration Checklist', ['controller' => 'conventionregistrations', 'action' => 'packageregistration'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_packageregistration) ? $active_cr_packageregistration : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Permission Forms', ['controller' => 'conventionregistrations', 'action' => 'permissionsforms'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_permissionforms) ? $active_cr_permissionforms : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Result Package', ['controller' => 'conventionregistrations', 'action' => 'resultpackage'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_resultpackage) ? $active_cr_resultpackage : '')]); ?>
-				</li>
-				<hr>
-				<?php
-				}
-				?>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Payment Transactions', ['controller' => 'transactions', 'action' => 'mytransactions'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_transactions) ? $active_transactions : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Edit Profile', ['controller' => 'users', 'action' => 'editprofile'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_editprofile) ? $active_editprofile : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Change Password', ['controller' => 'users', 'action' => 'changepassword'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_changepassword) ? $active_changepassword : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Logout', ['controller' => 'users', 'action' => 'logout'], ['escape' => false, 'class' => 'nav-link']); ?>
-				</li>
-			</ul>
-		</div>
-	</nav>
-<?php
+if ($userType === 'School') {
+    $menuGroups['Workspace'][] = ['Global Supervisors List', 'users', 'users', 'teachers', 'active_teachers'];
+    $menuGroups['Workspace'][] = ['Global Students List', 'graduation-cap', 'users', 'students', 'active_students'];
+    $menuGroups['Workspace'][] = ['Convention Registrations', 'calendar-o', 'conventionregistrations', 'myregistrations', 'active_convention_registrations'];
+    if ($hasConvention) {
+        $menuGroups['Selected convention'] = [
+            ['Price Structure', 'tag', 'conventionregistrations', 'pricestructure', 'active_cr_price_structure'],
+            ['Supervisor Registration', 'user-plus', 'conventionregistrations', 'teachers', 'active_cr_teachers'],
+            ['Student Registration', 'graduation-cap', 'conventionregistrations', 'students', 'active_cr_students'],
+            ['Student Event Registration', 'calendar-plus-o', 'conventionregistrations', 'studentevents', 'active_cr_studentevents'],
+            ['Student Grouping', 'users', 'groups', 'viewlist', 'active_cr_studentgroups'],
+            ['Events of the Heart', 'heart-o', 'heartevents', 'viewlist', 'active_cr_eventsheart'],
+            ['View/Edit Event Submissions', 'file-text-o', 'eventsubmissions', 'viewlist', 'active_cr_eventsubmission'],
+            ['Registration Checklist', 'check-square-o', 'conventionregistrations', 'packageregistration', 'active_cr_packageregistration'],
+            ['Permission Forms', 'clipboard', 'conventionregistrations', 'permissionsforms', 'active_cr_permissionforms'],
+            ['Judges Registered', 'gavel', 'conventionregistrations', 'judgesregistered', 'active_cr_judgesregistered'],
+            ['Result Package', 'trophy', 'conventionregistrations', 'resultpackage', 'active_cr_resultpackage'],
+            ['Reports', 'line-chart', 'Reports', 'index', 'active_reports'],
+        ];
+    }
+    $menuGroups['Payments'] = [
+        ['Payment Transactions', 'credit-card', 'transactions', 'mytransactions', 'active_transactions'],
+    ];
+} elseif ($userType === 'Student') {
+    $menuGroups['My convention'] = [
+        ['Registration Checklist', 'check-square-o', 'conventionregistrations', 'packageregistration', 'active_cr_packageregistration'],
+        ['Student Event Registration', 'calendar-plus-o', 'conventionregistrations', 'studentevents', 'active_cr_studentevents'],
+        ['My Schedule', 'calendar-o', 'users', 'myschedule', 'active_myschedule'],
+        ['My Events', 'flag-o', 'users', 'myevents', 'active_myevents'],
+    ];
+} elseif ($userType === 'Teacher_Parent') {
+    if ($hasConvention && $profileType === 'Supervisor') {
+        $menuGroups['Selected convention'] = [
+            ['Student Event Registration', 'calendar-plus-o', 'conventionregistrations', 'studentevents', 'active_cr_studentevents'],
+            ['Student Grouping', 'users', 'groups', 'viewlist', 'active_cr_studentgroups'],
+            ['Events of the Heart', 'heart-o', 'heartevents', 'viewlist', 'active_cr_eventsheart'],
+            ['View/Edit Event Submissions', 'file-text-o', 'eventsubmissions', 'viewlist', 'active_cr_eventsubmission'],
+            ['Registration Checklist', 'check-square-o', 'conventionregistrations', 'packageregistration', 'active_cr_packageregistration'],
+            ['Scripture', 'book', 'scripture', 'index', 'active_scripture'],
+        ];
+    }
+    if ($profileType === 'Judge') {
+        $menuGroups['Judging'] = [
+            ['Judge Experience', 'star-o', 'users', 'judgeexperience', 'active_judgeexp'],
+            ['Convention Registrations', 'calendar-o', 'conventionregistrations', 'myregistrations', 'active_convention_registrations'],
+        ];
+        if ($hasConvention) {
+            $menuGroups['Judging'][] = ['Scripture', 'book', 'scripture', 'index', 'active_scripture'];
+        }
+    }
+} elseif ($userType === 'Judge') {
+    $menuGroups['Workspace'][] = ['Convention Registrations', 'calendar-o', 'conventionregistrations', 'myregistrations', 'active_convention_registrations'];
+    if ($hasConvention) {
+        $menuGroups['Selected convention'] = [
+            ['Events', 'flag-o', 'conventionregistrations', 'judgeevents', 'active_cr_judgeevents'],
+            ['Scripture', 'book', 'scripture', 'index', 'active_scripture'],
+        ];
+    }
 }
-?>
 
-<?php
-// teacher left menu
-if ($this->request->getSession()->read("user_id") > 0 && ($this->request->getSession()->read("user_type") == "Teacher_Parent")) {
-?>
-	<div class="sidebar-icon user-sidebar-toggle" role="button" tabindex="0" aria-label="Toggle menu"><i class="fa fa-bars"></i></div>
-	<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-blue sidebar collapse">
-		<div class="position-sticky pt-3 pb-3 sidebar-sticky">
-			<ul class="nav flex-column">
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Dashboard', ['controller' => 'users', 'action' => 'dashboard'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_dashboard) ? $active_dashboard : '')]); ?>
-				</li>
-				
-				<?php
-				// to show links related to convention registrations
-				if($this->request->getSession()->read("sess_selected_convention_registration_id")>0 && $this->request->getSession()->read("current_session_profile_type") == "Supervisor")
-				{
-				?>
-				<hr>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Event Registration', ['controller' => 'conventionregistrations', 'action' => 'studentevents'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_studentevents) ? $active_cr_studentevents : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Student Grouping', ['controller' => 'groups', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_studentgroups) ? $active_cr_studentgroups : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Events of the Heart', ['controller' => 'heartevents', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_eventsheart) ? $active_cr_eventsheart : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('View/Edit Event Submissions', ['controller' => 'eventsubmissions', 'action' => 'viewlist'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_eventsubmission) ? $active_cr_eventsubmission : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Registration Checklist', ['controller' => 'conventionregistrations', 'action' => 'packageregistration'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_packageregistration) ? $active_cr_packageregistration : '')]); ?>
-				</li>
-				<hr>
-				<?php
-				}
-				?>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Edit Profile', ['controller' => 'users', 'action' => 'editprofile'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_editprofile) ? $active_editprofile : '')]); ?>
-				</li>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Change Password', ['controller' => 'users', 'action' => 'changepassword'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_changepassword) ? $active_changepassword : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Judge Profile', ['controller' => 'users', 'action' => 'applyforjudge'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_applyforjudge) ? $active_applyforjudge : '')]); ?>
-				</li>
-				
-				<?php
-				// FIXED: Cleared out invisible unicode syntax spacing block 
-				if ($this->request->getSession()->read("current_session_profile_type") == "Judge")
-				{
-				?>
-				<hr>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Judge Experience', ['controller' => 'users', 'action' => 'judgeexperience'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_judgeexp) ? $active_judgeexp : '')]); ?>
-				</li>
-				<li class="nav-item dash-item ">
-					<?php echo $this->Html->link('Convention Registrations', ['controller' => 'conventionregistrations', 'action' => 'myregistrations'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_convention_registrations) ? $active_convention_registrations : '')]); ?>
-				</li>
-				<hr>
-				<?php
-				}
-				?>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Logout', ['controller' => 'users', 'action' => 'logout'], ['escape' => false, 'class' => 'nav-link']); ?>
-				</li>
-			</ul>
-		</div>
-	</nav>
-<?php
+$menuGroups['Account'] = [
+    ['Edit Profile', 'user-o', 'users', $userType === 'Judge' ? 'judgeeditprofile' : 'editprofile', 'active_editprofile'],
+    ['Change Password', 'lock', 'users', 'changepassword', 'active_changepassword'],
+];
+if ($session->read('school_student_access') !== null) {
+    $menuGroups['Account'] = array_values(array_filter($menuGroups['Account'], static fn($item) => $item[3] !== 'changepassword'));
 }
-?>
+if ($userType === 'Teacher_Parent') {
+    $menuGroups['Account'][] = ['Judge Profile', 'id-card-o', 'users', 'applyforjudge', 'active_applyforjudge'];
+}
+if (!empty($supervisorAgreementRequired) && $userType === 'Teacher_Parent' && $profileType === 'Supervisor' && isset($menuGroups['Selected convention'])) {
+    foreach ($menuGroups['Selected convention'] as &$item) {
+        if ($item[2] === 'scripture') {
+            continue;
+        }
+        $item[1] = 'lock';
+        $item[2] = 'users';
+        $item[3] = 'notifications';
+    }
+    unset($item);
+}
+$menuGroups['Account'][] = ['Logout', 'sign-out', 'users', 'logout', ''];
 
-<?php
-// judges left menu
-if ($this->request->getSession()->read("user_id") > 0 && ($this->request->getSession()->read("user_type") == "Judge"))
-{
+if ($session->read('user_id') > 0 && in_array($userType, ['School', 'Student', 'Teacher_Parent', 'Judge'], true)) {
 ?>
-	<div class="sidebar-icon user-sidebar-toggle" role="button" tabindex="0" aria-label="Toggle menu"><i class="fa fa-bars"></i></div>
-	<nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-blue sidebar collapse">
-		
-		<div class="position-sticky pt-3 pb-3 sidebar-sticky">
-			<ul class="nav flex-column">
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Dashboard', ['controller' => 'users', 'action' => 'dashboard'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_dashboard) ? $active_dashboard : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item ">
-					<?php echo $this->Html->link('Convention Registrations', ['controller' => 'conventionregistrations', 'action' => 'myregistrations'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_convention_registrations) ? $active_convention_registrations : '')]); ?>
-				</li>
-				
-				<?php
-				// to show links related to convention registrations
-				if($this->request->getSession()->read("sess_selected_convention_registration_id")>0)
-				{
-				?>
-				<hr>
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Events', ['controller' => 'conventionregistrations', 'action' => 'judgeevents'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_cr_judgeevents) ? $active_cr_judgeevents : '')]); ?>
-				</li>
-				<hr>
-				<?php
-				}
-				?>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Edit Profile', ['controller' => 'users', 'action' => 'judgeeditprofile'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_editprofile) ? $active_editprofile : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Change Password', ['controller' => 'users', 'action' => 'changepassword'], ['escape' => false, 'class' => 'nav-link ' . (isset($active_changepassword) ? $active_changepassword : '')]); ?>
-				</li>
-				
-				<li class="nav-item dash-item">
-					<?php echo $this->Html->link('Logout', ['controller' => 'users', 'action' => 'logout'], ['escape' => false, 'class' => 'nav-link']); ?>
-				</li>
-			</ul>
-		</div>
-	</nav>
-<?php
-}
-?>
+<button class="portal-sidebar-backdrop" type="button" tabindex="-1" aria-label="Close navigation" hidden></button>
+<nav id="sidebarMenu" class="col-md-3 col-lg-2 sidebar portal-sidebar" aria-label="Main navigation">
+    <div class="portal-sidebar-heading">
+        <span class="portal-sidebar-heading-label">Your workspace</span>
+        <div class="portal-sidebar-heading-actions">
+            <span class="portal-sidebar-dot" aria-hidden="true"></span>
+            <button class="portal-theme-toggle" type="button" aria-label="Night mode" aria-pressed="false" title="Turn on night mode" hidden>
+                <i class="fa fa-moon-o" aria-hidden="true"></i>
+            </button>
+        </div>
+    </div>
+    <?php if (!empty($supervisorAgreementRequired)): ?>
+        <div class="portal-sidebar-help">
+            <strong>Supervisor agreement required</strong>
+            <p><?= h($supervisorAgreementError ?? 'Accept in Notifications to unlock your student convention activities.') ?></p>
+            <?= $this->Html->link('Review agreement', ['controller' => 'users', 'action' => 'notifications']) ?>
+        </div>
+    <?php endif; ?>
+    <?php foreach ($menuGroups as $groupTitle => $items) { ?>
+        <div class="portal-nav-group">
+            <h2><?= h($groupTitle) ?></h2>
+            <ul class="nav flex-column">
+                <?php foreach ($items as [$label, $icon, $controller, $action, $activeVariable]) {
+                    $isActive = $activeVariable !== '' && $this->get($activeVariable) === 'active';
+                    ?>
+                    <li class="nav-item">
+                        <?= $this->Html->link(
+                            '<i class="fa fa-' . h($icon) . '" aria-hidden="true"></i><span>' . h($label) . '</span>' .
+                            ($isActive ? '<i class="fa fa-angle-right portal-nav-arrow" aria-hidden="true"></i>' : ''),
+                            ['controller' => $controller, 'action' => $action],
+                            ['escape' => false, 'class' => 'nav-link' . ($isActive ? ' active' : ''), 'aria-current' => $isActive ? 'page' : null, 'aria-label' => $label, 'title' => $label]
+                        ) ?>
+                    </li>
+                <?php } ?>
+            </ul>
+        </div>
+    <?php } ?>
+    <div class="portal-sidebar-help">
+        <i class="fa fa-life-ring" aria-hidden="true"></i>
+        <strong>A little help along the way</strong>
+        <p>Our events team is here for you.</p>
+        <a href="mailto:events@scee.edu.au">Contact support <i class="fa fa-arrow-right" aria-hidden="true"></i></a>
+    </div>
+</nav>
+<?php } ?>

@@ -5,6 +5,8 @@ $schedCat = isset($schedCat) ? (int)$schedCat : 0;
 $bracketData = isset($bracketData) && is_array($bracketData) ? $bracketData : [];
 $teamNameMap = isset($teamNameMap) && is_array($teamNameMap) ? $teamNameMap : [];
 $eventName = is_object($eventD) ? (string)($eventD->event_name ?? 'Event') : 'Event';
+$eventIdNumber = is_object($eventD) ? trim((string)($eventD->event_id_number ?? '')) : '';
+$eventDisplayName = trim($eventName . ($eventIdNumber !== '' ? ' ('.$eventIdNumber.')' : ''));
 $programTitle = is_object($conventionSD) ? trim((string)($conventionSD->Conventions['name'] ?? '')) : '';
 
 if (!function_exists('sdGetSportRoundLabel')) {
@@ -166,22 +168,11 @@ if ($logoPath !== '' && is_file($logoPath)) {
 @media print {
 	.sd-wrap { background: #fff; padding: 0; }
 	.sd-sheet { box-shadow: none; border-radius: 0; max-width: 100%; }
-	/* Preserve dark blue header for event identity block */
-	.sd-header {
-		background: #1e3a6e !important;
-		color: #fff !important;
-	}
-	.sd-header-text .sd-org,
-	.sd-header-text .sd-event,
-	.sd-header-text .sd-convention {
-		color: #fff !important;
-		opacity: 1 !important;
-	}
 	.sd-round { }
-	/* Let rounds flow naturally to avoid large blank color blocks in print preview */
-	.sd-round + .sd-round { break-before: auto; page-break-before: auto; }
+	.sd-round + .sd-round { break-before: page; page-break-before: always; }
 	.sd-round + .sd-round + .sd-round { break-before: auto; page-break-before: auto; }
-	.sd-round-semi { break-before: auto; page-break-before: auto; }
+	.sd-round + .sd-round.sd-round-semi,
+	.sd-round + .sd-round + .sd-round.sd-round-semi { break-before: page; page-break-before: always; }
 	.sd-single-page .sd-round + .sd-round,
 	.sd-single-page .sd-round-semi { break-before: auto !important; page-break-before: auto !important; }
 	.sd-bracket-table { font-size: 11px; }
@@ -201,7 +192,7 @@ if ($logoPath !== '' && is_file($logoPath)) {
 			<?php } ?>
 			<div class="sd-header-text">
 				<div class="sd-org">A.C.E. Student Convention</div>
-				<div class="sd-event"><?php echo h($eventName); ?></div>
+				<div class="sd-event"><?php echo h($eventDisplayName !== '' ? $eventDisplayName : $eventName); ?></div>
 				<div class="sd-convention"><?php echo h($programTitle); ?></div>
 			</div>
 		</div>
@@ -212,17 +203,70 @@ if ($logoPath !== '' && is_file($logoPath)) {
 			<?php } else { ?>
 				<?php
 				$timingById = [];
-				$hasActualThirdPlaceMatch = false;
-				$finalRoundNumber = 0;
 				foreach ($bracketData as $roundRows) {
 					foreach ($roundRows as $timingRow) {
 						$timingById[(int)$timingRow->id] = $timingRow;
-						$finalRoundNumber = max($finalRoundNumber, (int)($timingRow->round_number ?? 0));
 					}
 				}
-				if ($finalRoundNumber > 0 && !empty($bracketData[$finalRoundNumber]) && count($bracketData[$finalRoundNumber]) > 1) {
-					$hasActualThirdPlaceMatch = true;
+				$renderedRoundIndex = 0;
+				$renderedRoundCount = 0;
+				$previewPlaceholderPlateauUsed = false;
+				$previewLastVisibleCount = null;
+				$renderedRoundKeys = [];
+				foreach ($bracketData as $probeRoundNum => $probeMatches) {
+					$probeVisible = [];
+					foreach ($probeMatches as $probeMatch) {
+						if ((int)($probeMatch->is_bye ?? 0) === 1) {
+							continue;
+						}
+						$probeVisible[] = $probeMatch;
+					}
+					$probeVisibleCount = count($probeVisible);
+					if ($probeVisibleCount === 0) {
+						continue;
+					}
+
+					$probeHasConcrete = false;
+					foreach ($probeVisible as $probeMatch) {
+						$probeA = $schedCat === 3
+							? sdGetGroupTeamDisplay((int)($probeMatch->user_id ?? 0), (string)($probeMatch->group_name ?? ''), $teamNameMap)
+							: sdGetTeamDisplay((string)($probeMatch->user_id ?? ''), $teamNameMap, $schedCat);
+						$probeB = $schedCat === 3
+							? sdGetGroupTeamDisplay((int)($probeMatch->user_id_opponent ?? 0), (string)($probeMatch->group_name_opponent ?? ''), $teamNameMap)
+							: sdGetTeamDisplay((string)($probeMatch->user_id_opponent ?? ''), $teamNameMap, $schedCat);
+						if ((int)($probeMatch->round_number ?? 0) > 1 && ((int)$schedCat === 2 || (int)$schedCat === 3)) {
+							$probeSourceOne = !empty($probeMatch->schtimeautoid1) ? ($timingById[(int)$probeMatch->schtimeautoid1] ?? null) : null;
+							$probeSourceTwo = !empty($probeMatch->schtimeautoid2) ? ($timingById[(int)$probeMatch->schtimeautoid2] ?? null) : null;
+							$probeA = sdGetEliminationSideLabel($probeSourceOne, (int)$schedCat, $teamNameMap);
+							$probeB = sdGetEliminationSideLabel($probeSourceTwo, (int)$schedCat, $teamNameMap);
+						}
+						if (!(sdIsPlaceholderLabel($probeA) && sdIsPlaceholderLabel($probeB))) {
+							$probeHasConcrete = true;
+							break;
+						}
+					}
+
+					if (!$probeHasConcrete && $previewLastVisibleCount !== null) {
+						if ($probeVisibleCount > $previewLastVisibleCount) {
+							break;
+						}
+						if ($probeVisibleCount === $previewLastVisibleCount) {
+							if ($previewPlaceholderPlateauUsed) {
+								break;
+							}
+							$previewPlaceholderPlateauUsed = true;
+						}
+					}
+
+					$renderedRoundCount++;
+					$renderedRoundKeys[] = (int)$probeRoundNum;
+					$previewLastVisibleCount = $probeVisibleCount;
 				}
+				$finalRoundNumber = count($renderedRoundKeys) ? (int)end($renderedRoundKeys) : 0;
+				$hasActualThirdPlaceMatch = ($finalRoundNumber > 0 && !empty($bracketData[$finalRoundNumber]) && count($bracketData[$finalRoundNumber]) > 1);
+				$placeholderPlateauUsed = false;
+				$lastVisibleCount = null;
+				$renderedActualThirdPlaceMatch = false;
 				?>
 				<?php foreach ($bracketData as $roundNum => $matches) { ?>
 					<?php
@@ -234,7 +278,6 @@ if ($logoPath !== '' && is_file($logoPath)) {
 						});
 						$actualThirdPlaceRow = array_pop($displayMatches);
 					}
-					$roundLabel = sdGetSportRoundLabel((int)$roundNum, $totalRounds);
 					$visibleMatches = [];
 					foreach ($displayMatches as $candidateMatch) {
 						if ((int)($candidateMatch->is_bye ?? 0) === 1) {
@@ -245,6 +288,51 @@ if ($logoPath !== '' && is_file($logoPath)) {
 					if (!count($visibleMatches) && !$actualThirdPlaceRow) {
 						continue;
 					}
+					$renderedRoundIndex++;
+					$roundLabel = sdGetSportRoundLabel($renderedRoundIndex, max(1, $renderedRoundCount));
+					$byeCount = 0;
+					foreach ($displayMatches as $displayMatchRow) {
+						if ((int)($displayMatchRow->is_bye ?? 0) === 1) {
+							$byeCount++;
+						}
+					}
+					if (((int)$schedCat === 2 || (int)$schedCat === 3) && $byeCount > 0) {
+						$roundLabel .= ' ('.count($visibleMatches).' matches + '.$byeCount.' BYEs)';
+					}
+					$hasConcreteMatch = false;
+					foreach ($visibleMatches as $candidateMatch) {
+						$previewTeamA = $schedCat === 3
+							? sdGetGroupTeamDisplay((int)($candidateMatch->user_id ?? 0), (string)($candidateMatch->group_name ?? ''), $teamNameMap)
+							: sdGetTeamDisplay((string)($candidateMatch->user_id ?? ''), $teamNameMap, $schedCat);
+						$previewTeamB = $schedCat === 3
+							? sdGetGroupTeamDisplay((int)($candidateMatch->user_id_opponent ?? 0), (string)($candidateMatch->group_name_opponent ?? ''), $teamNameMap)
+							: sdGetTeamDisplay((string)($candidateMatch->user_id_opponent ?? ''), $teamNameMap, $schedCat);
+
+						if ((int)($candidateMatch->round_number ?? 0) > 1 && ((int)$schedCat === 2 || (int)$schedCat === 3)) {
+							$previewSourceOne = !empty($candidateMatch->schtimeautoid1) ? ($timingById[(int)$candidateMatch->schtimeautoid1] ?? null) : null;
+							$previewSourceTwo = !empty($candidateMatch->schtimeautoid2) ? ($timingById[(int)$candidateMatch->schtimeautoid2] ?? null) : null;
+							$previewTeamA = sdGetEliminationSideLabel($previewSourceOne, (int)$schedCat, $teamNameMap);
+							$previewTeamB = sdGetEliminationSideLabel($previewSourceTwo, (int)$schedCat, $teamNameMap);
+						}
+
+						if (!(sdIsPlaceholderLabel($previewTeamA) && sdIsPlaceholderLabel($previewTeamB))) {
+							$hasConcreteMatch = true;
+							break;
+						}
+					}
+					if (!$hasConcreteMatch && !$actualThirdPlaceRow) {
+						$currentVisibleCount = count($visibleMatches);
+						if ($lastVisibleCount !== null && $currentVisibleCount > $lastVisibleCount) {
+							break;
+						}
+						if ($lastVisibleCount !== null && $currentVisibleCount === $lastVisibleCount) {
+							if ($placeholderPlateauUsed) {
+								break;
+							}
+							$placeholderPlateauUsed = true;
+						}
+					}
+					$lastVisibleCount = count($visibleMatches);
 					$headingClass = 'sd-round-heading';
 					$roundDivClass = 'sd-round';
 					if ($roundLabel === 'Final') {
@@ -261,6 +349,7 @@ if ($logoPath !== '' && is_file($logoPath)) {
 					<div class="<?php echo $roundDivClass; ?>">
 						<?php if ($actualThirdPlaceRow) { ?>
 							<?php
+							$renderedActualThirdPlaceMatch = true;
 							$srcOne = !empty($actualThirdPlaceRow->schtimeautoid1) ? ($timingById[(int)$actualThirdPlaceRow->schtimeautoid1] ?? null) : null;
 							$srcTwo = !empty($actualThirdPlaceRow->schtimeautoid2) ? ($timingById[(int)$actualThirdPlaceRow->schtimeautoid2] ?? null) : null;
 							$thirdA = sdGetEliminationSideLabel($srcOne, (int)$schedCat, $teamNameMap);

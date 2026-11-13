@@ -1,5 +1,6 @@
 <?php echo $this->Html->script('facebox.js'); ?>
 <?php echo $this->Html->css('facebox.css'); ?>
+<?php $this->Paginator->options(['url' => ['?' => ['keyword' => $keyword]]]); ?>
 <script type="text/javascript">
     $(document).ready(function ($) {
         $('.close_image').hide();
@@ -33,7 +34,7 @@
                     <thead class="cf ajshort">
                         <tr>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('first_name', 'First Name'); ?></th>
-                            <th class="sorting_paging"><?php echo $this->Paginator->sort('middllast_name', 'Surname'); ?></th>
+                            <th class="sorting_paging"><?php echo $this->Paginator->sort('last_name', 'Surname'); ?></th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('email_address', 'Email'); ?></th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('previous_convention_experience', 'Previous Experience'); ?></th>
                             <th class="sorting_paging"><?php echo $this->Paginator->sort('non_convention_experience', 'Non-conv Experience'); ?></th>

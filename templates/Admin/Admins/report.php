@@ -14,11 +14,18 @@
             <div class="report-header-row">
                 <div class="dashboard-hero-copy">
                 </div>
+                <?php
+                $reportLinkQuery = ['convention_year' => $selectedReportYear];
+                if (($selectedReportType ?? 'overall') === 'convention' && !empty($selectedConventionSeasonId)) {
+                    $reportLinkQuery['report_type'] = 'convention';
+                    $reportLinkQuery['conventionseason_id'] = (int)$selectedConventionSeasonId;
+                }
+                ?>
                 <div class="dashboard-download-btn">
-                    <a href="<?php echo $this->Url->build(['action' => 'previewReport', '?' => ['convention_year' => $selectedReportYear]]); ?>" class="btn btn-info" target="_blank">
+                    <a href="<?php echo $this->Url->build(['action' => 'previewReport', '?' => $reportLinkQuery]); ?>" class="btn btn-info" target="_blank">
                         <i class="fa fa-eye"></i> Preview Report
                     </a>
-                    <a href="<?php echo $this->Url->build(['action' => 'downloadReport', '?' => ['convention_year' => $selectedReportYear]]); ?>" class="btn btn-primary">
+                    <a href="<?php echo $this->Url->build(['action' => 'downloadReport', '?' => $reportLinkQuery]); ?>" class="btn btn-primary">
                         <i class="fa fa-download"></i> Download Report
                     </a>
                 </div>
@@ -41,17 +48,79 @@
                     ]);
                     ?>
                 </div>
+                <div class="report-filter-group">
+                    <label for="report-type-id">Report Type</label>
+                    <select id="report-type-id" name="report_type" class="form-control">
+                        <option value="overall"<?php echo ($selectedReportType ?? 'overall') === 'overall' ? ' selected' : ''; ?>>Overall report (all conventions this year)</option>
+                        <option value="convention"<?php echo ($selectedReportType ?? 'overall') === 'convention' ? ' selected' : ''; ?>>Individual convention report</option>
+                    </select>
+                </div>
+                <div class="report-filter-group" id="report-convention-group"<?php echo ($selectedReportType ?? 'overall') === 'convention' ? '' : ' hidden'; ?>>
+                    <label for="report-convention-id">Convention</label>
+                    <select id="report-convention-id" name="conventionseason_id" class="form-control"<?php echo ($selectedReportType ?? 'overall') === 'convention' ? '' : ' disabled'; ?>>
+                        <option value="">Select Convention</option>
+                        <?php foreach ($reportConventionOptions ?? [] as $conventionOption) { ?>
+                            <option value="<?php echo (int)$conventionOption['id']; ?>" data-year="<?php echo (int)$conventionOption['year']; ?>"<?php echo (int)$conventionOption['id'] === (int)($selectedConventionSeasonId ?? 0) ? ' selected' : ''; ?>><?php echo h($conventionOption['name']); ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
                 <button type="submit" class="btn btn-success report-filter-btn">Load Report</button>
             <?php echo $this->Form->end(); ?>
         </div>
+        <script>
+            (function () {
+                var year = document.getElementById('convention-year-id');
+                var type = document.getElementById('report-type-id');
+                var group = document.getElementById('report-convention-group');
+                var convention = document.getElementById('report-convention-id');
+                if (!year || !type || !group || !convention) {
+                    return;
+                }
+
+                function sync() {
+                    var individual = type.value === 'convention';
+                    group.hidden = !individual;
+                    convention.disabled = !individual;
+                    convention.required = individual;
+                    Array.prototype.forEach.call(convention.options, function (option) {
+                        if (!option.value) {
+                            return;
+                        }
+                        var matches = option.getAttribute('data-year') === year.value;
+                        option.hidden = !matches;
+                        option.disabled = !matches;
+                        if (!matches && option.selected) {
+                            convention.value = '';
+                        }
+                    });
+                }
+
+                year.addEventListener('change', sync);
+                type.addEventListener('change', sync);
+                sync();
+            })();
+        </script>
     </section>
 
     <section class="content">
         <?php if (empty($hasReportData)) { ?>
-            <div class="alert alert-info">Please select a convention year to view report data.</div>
+            <div class="alert alert-info">Please select a convention year<?php echo ($selectedReportType ?? 'overall') === 'convention' ? ' and convention' : ''; ?> to view report data.</div>
         <?php } ?>
 
         <?php if (!empty($hasReportData)) { ?>
+        <h3 class="section-title" style="margin-top:0">
+            <?php echo h(($conv_season->Conventions['name'] ?? 'All Conventions') . ' ' . $selectedReportYear); ?>
+            <small><?php echo ($selectedReportType ?? 'overall') === 'convention' ? 'Individual convention report' : 'Overall report'; ?></small>
+        </h3>
+        <?php if (!empty($convention_date_lines) && is_array($convention_date_lines)) { ?>
+        <div class="row">
+            <div class="col-md-12">
+                <?php foreach ($convention_date_lines as $conventionDateLine) { ?>
+                    <p class="text-muted" style="margin: 0 0 6px;"><?php echo h($conventionDateLine); ?></p>
+                <?php } ?>
+            </div>
+        </div>
+        <?php } ?>
         <!-- Place Winners Section -->
         <div class="row">
             <div class="col-md-12">
@@ -61,7 +130,7 @@
                 <div class="info-box">
                     <span class="info-box-icon bg-blue"><i class="fa fa-trophy"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">1st Place Winners</span>
+                        <span class="info-box-text">1st</span>
                         <span class="info-box-number"><?php echo isset($first_place_winners) ? $first_place_winners : '0'; ?></span>
                     </div>
                 </div>
@@ -71,7 +140,7 @@
                 <div class="info-box">
                     <span class="info-box-icon bg-red"><i class="fa fa-trophy"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">2nd Place Winners</span>
+                        <span class="info-box-text">2nd</span>
                         <span class="info-box-number"><?php echo isset($second_place_winners) ? $second_place_winners : '0'; ?></span>
                     </div>
                 </div>
@@ -81,8 +150,38 @@
                 <div class="info-box info-box-third-place">
                     <span class="info-box-icon bg-yellow"><i class="fa fa-trophy"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">3rd Place Winners</span>
+                        <span class="info-box-text">3rd</span>
                         <span class="info-box-number"><?php echo isset($third_place_winners) ? $third_place_winners : '0'; ?></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6 col-sm-6 col-xs-12">
+                <div class="info-box">
+                    <span class="info-box-icon bg-green"><i class="fa fa-trophy"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">4th</span>
+                        <span class="info-box-number"><?php echo isset($fourth_place_winners) ? $fourth_place_winners : '0'; ?></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6 col-sm-6 col-xs-12">
+                <div class="info-box">
+                    <span class="info-box-icon bg-light-blue"><i class="fa fa-trophy"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">5th</span>
+                        <span class="info-box-number"><?php echo isset($fifth_place_winners) ? $fifth_place_winners : '0'; ?></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6 col-sm-6 col-xs-12">
+                <div class="info-box">
+                    <span class="info-box-icon bg-purple"><i class="fa fa-trophy"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">6th</span>
+                        <span class="info-box-number"><?php echo isset($sixth_place_winners) ? $sixth_place_winners : '0'; ?></span>
                     </div>
                 </div>
             </div>
@@ -350,6 +449,10 @@
         font-size: 13px;
         font-weight: 700;
         margin: 0;
+    }
+
+    .report-filter-group[hidden] {
+        display: none;
     }
 
     .report-filter-btn {

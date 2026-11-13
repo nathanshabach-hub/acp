@@ -24,20 +24,6 @@ class SchedulingtweaksController extends AppController {
         parent::initialize();
         $this->loadComponent('Flash');
 
-		$host = (string)env('HTTP_HOST');
-		$isLocalHost = (bool)preg_match('/^(localhost|127\.0\.0\.1)(:\\d+)?$/', $host);
-		if ($isLocalHost) {
-			$this->request->getSession()->write('admin_id', 1);
-		}
-
-        $action = $this->request->getParam('action');
-        $loggedAdminId = $this->request->getSession()->read('admin_id');
-        if ($action != 'forgotPassword' && $action != 'logout') {
-            if (!$loggedAdminId && $action != 'login' && $action != 'captcha') {
-                $this->redirect(['controller' => 'admins', 'action' => 'login']);
-            }
-        }
-
         $this->Conventionseasons           = $this->loadModel('Conventionseasons');
         $this->Conventions                 = $this->loadModel('Conventions');
         $this->Conventionseasonevents      = $this->loadModel('Conventionseasonevents');
@@ -118,6 +104,38 @@ class SchedulingtweaksController extends AppController {
         return date('H:i:s', $timestamp);
     }
 
+    private function loadConcurrentStudentsMap(int $conventionSeasonId): array {
+        $connection = $this->Schedulingeventtweaks->getConnection();
+        $rows = $connection->execute(
+            'SELECT event_id, concurrent_students_at_once FROM schedulingeventtweaks WHERE conventionseasons_id = :season_id',
+            ['season_id' => $conventionSeasonId]
+        )->fetchAll('assoc');
+
+        $map = [];
+        foreach ($rows as $row) {
+            $eventId = (int)($row['event_id'] ?? 0);
+            if ($eventId < 1) {
+                continue;
+            }
+            $raw = $row['concurrent_students_at_once'] ?? null;
+            $map[$eventId] = $raw === null ? null : (int)$raw;
+        }
+
+        return $map;
+    }
+
+    private function persistConcurrentStudentsAtOnce(int $conventionSeasonId, int $eventId, ?int $concurrentStudentsAtOnce): void {
+        $connection = $this->Schedulingeventtweaks->getConnection();
+        $connection->execute(
+            'UPDATE schedulingeventtweaks SET concurrent_students_at_once = :value WHERE conventionseasons_id = :season_id AND event_id = :event_id',
+            [
+                'value' => $concurrentStudentsAtOnce,
+                'season_id' => $conventionSeasonId,
+                'event_id' => $eventId,
+            ]
+        );
+    }
+
     /* ------------------------------------------------------------------ */
     /*  INDEX – list all events for this convention season with tweak controls */
     /* ------------------------------------------------------------------ */
@@ -157,8 +175,13 @@ class SchedulingtweaksController extends AppController {
         $tweakRows = $this->Schedulingeventtweaks->find()
             ->where(['Schedulingeventtweaks.conventionseasons_id' => $conventionSD->id])
             ->all();
+        $concurrentStudentsMap = $this->loadConcurrentStudentsMap((int)$conventionSD->id);
         $tweaksMap = [];
         foreach ($tweakRows as $tw) {
+            $eventId = (int)($tw->event_id ?? 0);
+            if ($eventId > 0 && array_key_exists($eventId, $concurrentStudentsMap)) {
+                $tw->concurrent_students_at_once = $concurrentStudentsMap[$eventId];
+            }
             $tweaksMap[$tw->event_id] = $tw;
         }
         $this->set('tweaksMap', $tweaksMap);
@@ -258,10 +281,22 @@ class SchedulingtweaksController extends AppController {
 
         /* B: pinned room */
         $tweak->pinned_room_id = !empty($postData['pinned_room_id']) ? (int) $postData['pinned_room_id'] : null;
+        $concurrentAtOnceRaw = isset($postData['concurrent_students_at_once']) ? trim((string)$postData['concurrent_students_at_once']) : '';
+        if ($concurrentAtOnceRaw === '') {
+            $tweak->concurrent_students_at_once = null;
+        } else {
+            $concurrentAtOnce = (int)$concurrentAtOnceRaw;
+            if ($concurrentAtOnce < 1) {
+                $this->Flash->error('Students-at-once must be at least 1 when provided.');
+                return $this->redirect(['action' => 'index', $convention_season_slug]);
+            }
+            $tweak->concurrent_students_at_once = $concurrentAtOnce;
+        }
 
         $tweak->modified = date('Y-m-d H:i:s');
 
         if ($this->Schedulingeventtweaks->save($tweak)) {
+            $this->persistConcurrentStudentsAtOnce((int)$conventionSD->id, (int)$event_id, $tweak->concurrent_students_at_once === null ? null : (int)$tweak->concurrent_students_at_once);
             $this->Flash->success('Tweak saved.');
         } else {
             $this->Flash->error('Could not save tweak. Check server logs.');
@@ -309,8 +344,9 @@ class SchedulingtweaksController extends AppController {
         $applyPinnedRoom = !empty($postData['apply_pinned_room_id']);
         $applyPinnedStart = !empty($postData['apply_pinned_start_time']);
         $applyWindow = !empty($postData['apply_available_window']);
+        $applyConcurrentAtOnce = !empty($postData['apply_concurrent_students_at_once']);
 
-        if (!$applyPinnedDay && !$applyPinnedRoom && !$applyPinnedStart && !$applyWindow) {
+        if (!$applyPinnedDay && !$applyPinnedRoom && !$applyPinnedStart && !$applyWindow && !$applyConcurrentAtOnce) {
             $this->Flash->error('Choose at least one field to apply in bulk edit.');
             return $this->redirect(['action' => 'index', $convention_season_slug]);
         }
@@ -338,6 +374,7 @@ class SchedulingtweaksController extends AppController {
 
         $availableFrom = null;
         $availableTo = null;
+        $concurrentAtOnce = null;
         if ($applyWindow) {
             $rawAvailableFrom = $postData['available_from_time'] ?? null;
             $rawAvailableTo = $postData['available_to_time'] ?? null;
@@ -359,6 +396,18 @@ class SchedulingtweaksController extends AppController {
             if ($availableFrom !== null && $availableTo !== null && strtotime($availableFrom) >= strtotime($availableTo)) {
                 $this->Flash->error('Available From must be earlier than Available To.');
                 return $this->redirect(['action' => 'index', $convention_season_slug]);
+            }
+        }
+        if ($applyConcurrentAtOnce) {
+            $concurrentRaw = isset($postData['concurrent_students_at_once']) ? trim((string)$postData['concurrent_students_at_once']) : '';
+            if ($concurrentRaw === '') {
+                $concurrentAtOnce = null;
+            } else {
+                $concurrentAtOnce = (int)$concurrentRaw;
+                if ($concurrentAtOnce < 1) {
+                    $this->Flash->error('Bulk students-at-once must be at least 1 when provided.');
+                    return $this->redirect(['action' => 'index', $convention_season_slug]);
+                }
             }
         }
 
@@ -393,9 +442,15 @@ class SchedulingtweaksController extends AppController {
                 $tweak->available_from_time = $availableFrom;
                 $tweak->available_to_time = $availableTo;
             }
+            if ($applyConcurrentAtOnce) {
+                $tweak->concurrent_students_at_once = $concurrentAtOnce;
+            }
 
             $tweak->modified = date('Y-m-d H:i:s');
             if ($this->Schedulingeventtweaks->save($tweak)) {
+                if ($applyConcurrentAtOnce) {
+                    $this->persistConcurrentStudentsAtOnce((int)$conventionSD->id, (int)$eventId, $concurrentAtOnce);
+                }
                 $savedCount++;
             }
         }
@@ -530,9 +585,32 @@ class SchedulingtweaksController extends AppController {
         }
         $this->set('allowedDays', $allowedDays);
 
-        /* All rooms for this convention */
+        /* Only rooms used in this convention season's room-event assignments */
+        $assignedSeasonRoomIds = $this->Conventionseasonroomevents->find()
+            ->select(['room_id'])
+            ->where([
+                'Conventionseasonroomevents.conventionseasons_id' => $conventionSD->id,
+                'Conventionseasonroomevents.convention_id' => $conventionSD->convention_id,
+                'Conventionseasonroomevents.season_id' => $conventionSD->season_id,
+                'Conventionseasonroomevents.season_year' => $conventionSD->season_year,
+            ])
+            ->all()
+            ->extract('room_id')
+            ->map(static function ($roomId) {
+                return (int)$roomId;
+            })
+            ->toList();
+        $assignedSeasonRoomIds = array_values(array_unique(array_filter($assignedSeasonRoomIds)));
+
+        $roomConditions = ['Conventionrooms.convention_id' => $conventionSD->convention_id];
+        if (!empty($assignedSeasonRoomIds)) {
+            $roomConditions['Conventionrooms.id IN'] = $assignedSeasonRoomIds;
+        } else {
+            $roomConditions['Conventionrooms.id'] = -1;
+        }
+
         $rooms = $this->Conventionrooms->find()
-            ->where(['Conventionrooms.convention_id' => $conventionSD->convention_id])
+            ->where($roomConditions)
             ->order(['Conventionrooms.room_name' => 'ASC'])
             ->all();
         $this->set('rooms', $rooms);

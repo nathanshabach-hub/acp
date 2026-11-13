@@ -122,6 +122,10 @@ class GroupsController extends AppController {
 			
 			// to get convention registration details
 			$conventionRegD = $this->Conventionregistrations->find()->where(['Conventionregistrations.id' => $sess_selected_convention_registration_id])->first();
+            $schoolId = $userDetails && $userDetails->user_type === 'School' ? (int)$userDetails->id : (int)($userDetails->school_id ?? 0);
+            if (!$conventionRegD || (int)$conventionRegD->user_id !== $schoolId) {
+                throw new \Cake\Http\Exception\ForbiddenException('Choose your own school convention registration.');
+            }
 			$this->set('conventionRegD', $conventionRegD);
 			$submissionsLocked = $this->areSubmissionsLocked($conventionRegD->conventionseason_id);
 			$this->set('submissionsLocked', $submissionsLocked);
@@ -229,7 +233,7 @@ class GroupsController extends AppController {
 						'Conventionregistrationstudents.status' => 1,
 						'Conventionregistrationstudents.student_id >' => 0,
 					])
-					->extract('student_id')
+					->all()->extract('student_id')
 					->map(static function ($studentId) {
 						return (int)$studentId;
 					})
@@ -321,6 +325,13 @@ class GroupsController extends AppController {
 					}
 				}
 				$createdCount = 0;
+                $teams = new \App\Service\CombinedTeams($this->Crstudentevents->getConnection());
+                foreach ($ungroupedStudents as $student) {
+                    if ($teams->managedStudent((int)$conventionRegD->conventionseason_id, (int)$eventD->id, (int)$student->student_id)) {
+                        $this->Flash->error('Automatic grouping cannot include students reserved by a combined-team request. Group other students manually.');
+                        return $this->redirect(['action' => 'eventgroups', $event_slug]);
+                    }
+                }
 				foreach ($ungroupedStudents as $ungroupedStudent) {
 					$this->Crstudentevents->updateAll(['group_name' => (string)$nextGroupNumber, 'modified' => date('Y-m-d H:i:s')], [
 						'Crstudentevents.id' => $ungroupedStudent->id,
@@ -341,6 +352,17 @@ class GroupsController extends AppController {
 			$group_name = trim((string)($this->request->getData()['Groups']['group_name'] ?? ''));
 			$minStudents = (int)$eventD->min_no;
 			$maxStudents = (int)$eventD->max_no;
+            $teams = new \App\Service\CombinedTeams($this->Crstudentevents->getConnection());
+            if ($teams->approvedForGroup((int)$conventionRegD->id, (int)$eventD->id, $group_name)) {
+                $this->Flash->error('An approved combined team cannot be edited here.');
+                return $this->redirect(['action' => 'eventgroups', $event_slug]);
+            }
+            foreach ($student_ids as $studentId) {
+                if ($teams->managedStudent((int)$conventionRegD->conventionseason_id, (int)$eventD->id, $studentId)) {
+                    $this->Flash->error('A selected student belongs to a combined-team request. Its membership cannot be changed here.');
+                    return $this->redirect(['action' => 'eventgroups', $event_slug]);
+                }
+            }
 
 			if (!$student_ids) {
 				$this->Flash->error('Please select at least one student.');
@@ -417,6 +439,10 @@ class GroupsController extends AppController {
 		}
 
 		$approvedIncomingStudentIds = [];
+        $teams = new \App\Service\CombinedTeams($this->Crstudentevents->getConnection());
+        foreach ($teams->approvedMembers((int)$conventionRegD->id, (int)$eventD->id) as $studentId) {
+            $approvedIncomingStudentIds[$studentId] = true;
+        }
 
 		$incomingApprovedRequests = $this->Combinerequests->find()
 			->where([
@@ -428,6 +454,9 @@ class GroupsController extends AppController {
 			->all();
 
 		foreach ($incomingApprovedRequests as $approvedRequest) {
+            if ($approvedRequest->combined_team_id) {
+                continue;
+            }
 			$sourceConventionReg = $this->Conventionregistrations->find()
 				->where([
 					'Conventionregistrations.user_id' => $approvedRequest->user_id,
@@ -477,6 +506,9 @@ class GroupsController extends AppController {
 			->all();
 
 		foreach ($outgoingApprovedRequests as $approvedRequest) {
+            if ($approvedRequest->combined_team_id) {
+                continue;
+            }
 			$targetConventionReg = $this->Conventionregistrations->find()
 				->where([
 					'Conventionregistrations.user_id' => $approvedRequest->combine_with_user_id,
@@ -493,7 +525,7 @@ class GroupsController extends AppController {
 					'Crstudentevents.event_id' => $eventD->id,
 					'Crstudentevents.student_id >' => 0,
 				])
-				->extract('student_id')
+				->all()->extract('student_id')
 				->map(static function ($sid) {
 					return (int)$sid;
 				})
@@ -726,6 +758,9 @@ class GroupsController extends AppController {
 			if ($groupName === '') {
 				continue;
 			}
+            if ((new \App\Service\CombinedTeams($this->Crstudentevents->getConnection()))->approvedForGroup((int)$conventionRegD->id, (int)$eventD->id, $groupName)) {
+                continue;
+            }
 
 			$submissionExists = $this->Eventsubmissions->find()->where([
 				'Eventsubmissions.event_id' => $eventD->id,
@@ -788,6 +823,10 @@ class GroupsController extends AppController {
 						"event_id" 					=> $eventD->id
 						])->first();
 			$group_name = $groupD->group_name;
+            if ((new \App\Service\CombinedTeams($this->Crstudentevents->getConnection()))->managedStudent((int)$conventionRegD->conventionseason_id, (int)$eventD->id, (int)$student_id)) {
+                $this->Flash->error('Combined-team membership is managed by its whole-team request and cannot be changed here.');
+                return $this->redirect(['action' => 'eventgroups', $event_slug]);
+            }
 			
 			$this->Crstudentevents->updateAll(['group_name' => '','modified' => date("Y-m-d H:i:s")],
 				[

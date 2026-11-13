@@ -12,8 +12,6 @@
 				<?php echo $this->Flash->render() ?>
 			</div>
 
-			<h2 class="mt-3 cr-addteacher-title">Add Supervisor Info</h2>
-
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form cr-addteacher-card">
 				<h2 class="form-title">Add Supervisors Info</h2>

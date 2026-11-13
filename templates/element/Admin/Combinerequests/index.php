@@ -1,5 +1,6 @@
 <?php echo $this->Html->script('facebox.js'); ?>
 <?php echo $this->Html->css('facebox.css'); ?>
+<?= $this->element('combined_teams') ?>
 <script type="text/javascript">
     $(document).ready(function ($) {
         $('.close_image').hide();

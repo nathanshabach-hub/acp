@@ -158,7 +158,7 @@ $canSeeHamburger = ($user_id > 0) && (
 					{
 					?>
 					<li class="nav-item ">
-						<a class="nav-link px-3" aria-current="page" href="<?php echo HTTP_PATH; ?>">Home</a>
+						<a class="nav-link px-3" aria-current="page" href="<?php echo rtrim(HTTP_PATH, '/'); ?>/">Home</a>
 					</li>
 					<?php
 					}
@@ -172,40 +172,13 @@ $canSeeHamburger = ($user_id > 0) && (
 					}
 					?>
 					
-					<li class="nav-item">
-						<a target="_blank" class="nav-link px-3" href="https://convention.accelerateministries.com.au/what-is-student-convention/">About</a>
-					</li>
-					
-					<li class="nav-item conventions-dropdown">
-						<a class="nav-link px-3 " href="#">Conventions</a>
-						<ul class="conventions-dropdown-menu dropdown-menu">
-							
-							<li class="conventions-sub-dropdown">
-								<a class="conventions-dropdown-item" href="#">Online</a>
-								<ul class="conventions-sub-dropdown-menu dropdown-menu">
-									<li><a class="conventions-dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/convention-online-2022/">2023 Online Convention</a></li>
-								</ul>
-							</li>
-							
-							<li>
-								<a class="conventions-dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/regional/">Regional</a>
-							</li>
-							<li>
-								<a class="conventions-dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/south-pacific/">South Pacific</a>
-							</li>
-							<li>
-								<a class="conventions-dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/international/">International</a>
-							</li>
-						</ul>
-					</li>
-					
 					<?php
 					if(!($this->request->getSession()->read("user_id") > 0))
 					{
 					?>
 					<li class="nav-item ">
 						<a class="nav-link px-3 <?php echo isset($header_menu_register_active) ? $header_menu_register_active : ''; ?>"
-							href="<?php echo HTTP_PATH; ?>">Register</a>
+							href="<?php echo rtrim(HTTP_PATH, '/'); ?>/">Register</a>
 					</li>
 					<li class="nav-item ">
 						<a class="nav-link px-3 <?php echo isset($header_menu_login_active) ? $header_menu_login_active : ''; ?>" href="<?php echo HTTP_PATH; ?>/users/login">Login</a>
@@ -217,20 +190,15 @@ $canSeeHamburger = ($user_id > 0) && (
 					<li class="nav-item guide-dropdown">
 						<a class="nav-link px-3 " href="#">Guidelines</a>
 						<ul class="dropdown-menu">
-							<li><a class="dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/guidelines/">Guidelines (In Person)</a></li>
-							<li><a class="dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/guidelines-online/">Guidelines (Online)</a></li>
+							<li><a class="dropdown-item" target="_blank" href="https://convention.accelerateministries.com.au/guidelines/">Guidelines</a></li>
 						</ul>
 					</li>
-					<li class="nav-item ">
-						<a target="_blank" class="nav-link px-3" href="https://convention.accelerateministries.com.au/updates/">Update</a>
-					</li>
-					
 					<?php
 					if(!($this->request->getSession()->read("user_id") > 0))
 					{
 					?>
 					<li class="nav-item ">
-						<a class="nav-link px-3 <?php echo isset($header_menu_judgesreg_active) ? $header_menu_judgesreg_active : ''; ?>" href="<?php echo HTTP_PATH; ?>/users/judgesregistration">Judges Registration</a>
+						<a class="nav-link px-3 <?php echo isset($header_menu_judgesreg_active) ? $header_menu_judgesreg_active : ''; ?>" href="<?php echo HTTP_PATH; ?>/users/judgesregistration">Judge Registration</a>
 					</li>
 					<li class="nav-item ">
 						<a class="nav-link px-3" href="<?php echo HTTP_PATH; ?>/users/squad247">24/7</a>

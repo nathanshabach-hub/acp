@@ -24,6 +24,7 @@ $this->Events = TableRegistry::getTableLocator()->get('Events');
                         <tr>
                             <th class="sorting_paging"># DB ID</th>
                             <th class="sorting_paging">Room</th>
+							<th class="sorting_paging">Number of Games</th>
 							<th class="sorting_paging">Event(s)</th>
 							<th class="sorting_paging"><i class=" fa fa-gavel"></i>  Action</th>
                         </tr>
@@ -37,6 +38,7 @@ $this->Events = TableRegistry::getTableLocator()->get('Events');
                             <tr>
                                 <td data-title="#DB ID Room">#<?php echo $datarecord->id;?></td>
                                 <td data-title="Room"><?php echo $datarecord->Conventionrooms['room_name'];?></td>
+                                <td data-title="Number of Games"><?php echo !empty($datarecord->number_games) ? (int)$datarecord->number_games : 1; ?></td>
                                 <td data-title="Event(s)">
 								<?php
 								$arrEventN = array();

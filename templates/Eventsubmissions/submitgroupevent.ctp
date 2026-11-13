@@ -132,10 +132,10 @@
 				<div class="form-group">
 					<label for="name">Choose Book(s)</label>
 					<div class="input-multiple">
-						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' => 'Choose', 'multiple' => 'multiple']); ?>
+						<?php echo $this->Form->select('Eventsubmissions.book_ids', $booksDD, ['id' => 'book_ids', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'multiple' => 'multiple']); ?>
 						<script>
 							$(document).ready(function () {
-								$('#book_ids').select2();
+								$('#book_ids').select2({ placeholder: 'Choose book(s)', width: '100%' });
 							});
 						</script>
 					</div>

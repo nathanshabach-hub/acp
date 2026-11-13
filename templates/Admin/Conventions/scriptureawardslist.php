@@ -37,16 +37,36 @@
             </div>
 			<?php
 			}
-			else
+			elseif (!$adultScriptureSubmissions)
 			{
 			?>
 				<div id="listingJS" style="display: none;" class="alert alert-success alert-block fade in"></div>
 				<div class="admin_no_record">No record found.</div>
-				
-				
 			<?php
 			}
 			?>
+            <?php if ($adultScriptureSubmissions): ?>
+                <div class="panel-body">
+                    <h4>Supervisor and Judge Scripture Submissions</h4>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead><tr><th>Name</th><th>Role</th><th>Award</th><th>Submitted</th><th>Submission</th><th>Certificate</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($adultScriptureSubmissions as $submission): ?>
+                                <tr>
+                                    <td><?= h(trim($submission['first_name'] . ' ' . $submission['middle_name'] . ' ' . $submission['last_name'])) ?></td>
+                                    <td><?= $submission['user_type'] === 'Judge' ? 'Judge' : 'Supervisor' ?></td>
+                                    <td><?= h($submission['event_name']) ?></td>
+                                    <td><?= h($submission['created']) ?></td>
+                                    <td><?= $this->Html->link('Download', ['action' => 'adultscripturefile', $submission['id']], ['class' => 'btn btn-xs btn-default']) ?></td>
+                                    <td><?= $this->Html->link('Print certificate', ['action' => 'adultscripturecertificate', $submission['id']], ['class' => 'btn btn-xs btn-danger', 'target' => '_blank']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            <?php endif; ?>
             
         
     </section>

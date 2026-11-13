@@ -61,7 +61,10 @@ $judgeConventionLabels = array(
                                 </td>
                                 <td data-title="Events">
 								<?php
-								echo $this->Html->link('<i class="fa fa-puzzle-piece"></i>', ['controller' => 'conventionregistrations', 'action' => 'judgeevents',$datarecord->slug], [ 'escape' => false, 'title' => 'View Selected Events', 'class'=>'']);
+								echo $this->Html->link('<i class="fa fa-puzzle-piece"></i>', \App\Service\JudgeRegistrationBilling::requiresFee($userDetails)
+                                    ? ['controller' => 'conventionregistrations', 'action' => 'judgepricestructure', $datarecord->Conventions['slug'], $datarecord->season_id]
+                                    : ['controller' => 'conventionregistrations', 'action' => 'judgeevents', $datarecord->slug],
+                                    ['escape' => false, 'title' => 'Judge registration and events']);
 								?>
 								</td>
                                 <td data-title="Status">
@@ -94,4 +97,3 @@ else
 <?php
 }
 ?>
-

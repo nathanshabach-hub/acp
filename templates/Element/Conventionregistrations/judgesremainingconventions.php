@@ -19,7 +19,7 @@
                                 <td data-title="Season Year"><?php echo $seasonD->season_year;?></td>
                                 <td data-title="Register Now">
 								<?php
-								echo $this->Html->link('Register', ['controller' => 'conventionregistrations', 'action' => 'judgesregisterconvention', $datarecord->slug,$seasonD->id], [ 'escape' => false, 'title' => 'Register Now', 'class' => 'btn btn-primary', 'confirm' => 'Are you sure you want to register for this convention?']);
+								echo $this->Html->link('Register', ['controller' => 'conventionregistrations', 'action' => 'judgepricestructure', $datarecord->slug,$seasonD->id], [ 'escape' => false, 'title' => 'Register Now', 'class' => 'btn btn-primary']);
 								?>
 								</td>
                             </tr>

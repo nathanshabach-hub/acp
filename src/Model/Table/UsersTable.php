@@ -7,6 +7,18 @@ use Cake\Validation\Validator;
 
 class UsersTable extends Table {
 
+    public function afterSave(\Cake\Event\EventInterface $event, \Cake\Datasource\EntityInterface $entity, \ArrayObject $options): void
+    {
+        if ($entity->user_type === 'Student' && (int)$entity->school_id > 0) {
+            try {
+                (new \App\Service\StudentPortalAccounts($this->getConnection()))->ensure((int)$entity->id);
+            } catch (\Exception $error) {
+                \Cake\Log\Log::error('Student saved but portal ID allocation failed for account ' . (int)$entity->id . ': ' . $error->getMessage());
+                throw new \RuntimeException('Student details were saved, but the portal ID could not be assigned. Run migration 010 and contact the events team before retrying.', 0, $error);
+            }
+        }
+    }
+
     public function initialize(array $config): void
     {	
 		$this->belongsTo('Schools', [

@@ -74,7 +74,6 @@
 }
 
 .cr-grouping-table-wrap {
-	border: 1px solid #dfe9f4;
 	border-radius: 14px;
 	overflow: hidden;
 }
@@ -270,7 +269,7 @@
 					<h1 class="cr-grouping-title">Student Grouping</h1>
 					<span class="cr-grouping-subtitle">Review each group event, check ungrouped students, and jump directly into team setup.</span>
 				</div>
-				<?php echo $this->Html->link('<i class="fa fa-plus"></i> Combined Team/Group Events', ['controller' => 'combinerequests', 'action' => 'addrequest'], ['escape' => false, 'class' => 'btn btn-primary cr-grouping-cta']); ?>
+				<?php echo $this->Html->link('<i class="fa fa-plus"></i> Combined Team/Group Events', ['controller' => 'combinerequests', 'action' => 'addrequest'], ['escape' => false, 'class' => 'btn btn-primary cr-grouping-cta', 'confirm' => 'You are about to create a request to combine your team or group with another school. Continue?']); ?>
 			</div>
 			<!-- dashboard-section-2 start-->
 

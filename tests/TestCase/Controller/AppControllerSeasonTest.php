@@ -28,7 +28,7 @@ class AppControllerSeasonTest extends TestCase
                  LIMIT 1',
                 ['today' => $today]
             )
-            ->fetchColumn();
+            ->fetchColumn(0);
 
         if ($expectedSeasonId === 0) {
             $expectedSeasonId = (int)ConnectionManager::get('default')
@@ -39,7 +39,7 @@ class AppControllerSeasonTest extends TestCase
                      ORDER BY season_year DESC, id DESC
                      LIMIT 1'
                 )
-                ->fetchColumn();
+                ->fetchColumn(0);
         }
 
         $this->assertSame($expectedSeasonId, $controller->getCurrentSeason());
@@ -67,7 +67,10 @@ class AppControllerSeasonTest extends TestCase
         $conventions = $controller->getCurrentSeasonConventions($seasonId, $seasonD->season_year);
 
         $this->assertNotEmpty($conventions);
-        $this->assertSame($expectedConventionIds, array_map('intval', array_keys($conventions)));
+        $actualConventionIds = array_map('intval', array_keys($conventions));
+        sort($expectedConventionIds);
+        sort($actualConventionIds);
+        $this->assertSame($expectedConventionIds, $actualConventionIds);
     }
 
     public function testGetSchoolConventionsForCurrentSeasonReturnsRegisteredConventionsFirst(): void

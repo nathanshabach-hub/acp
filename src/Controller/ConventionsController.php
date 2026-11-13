@@ -76,7 +76,7 @@ class ConventionsController extends AppController {
         }
 
         $this->Conventions->updateAll(['status' => '1'], ['slug' => $slug]);
-        $html = '<a href="/acp_demo_test/admin/conventions/deactivateconvention/' . h($slug) . '" title="Deactivate"><button class="btn btn-success btn-xs"><i class="fa fa-check"></i></button></a>';
+        $html = '<a href="' . h(\Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Conventions', 'action' => 'deactivateconvention', $slug])) . '" title="Deactivate"><button class="btn btn-success btn-xs"><i class="fa fa-check"></i></button></a>';
         return $this->response->withType('html')->withStringBody($html);
     }
 
@@ -90,7 +90,7 @@ class ConventionsController extends AppController {
         }
 
         $this->Conventions->updateAll(['status' => '0'], ['slug' => $slug]);
-        $html = '<a href="/acp_demo_test/admin/conventions/activateconvention/' . h($slug) . '" title="Activate"><button class="btn btn-danger btn-xs"><i class="fa fa-ban"></i></button></a>';
+        $html = '<a href="' . h(\Cake\Routing\Router::url(['prefix' => 'Admin', 'controller' => 'Conventions', 'action' => 'activateconvention', $slug])) . '" title="Activate"><button class="btn btn-danger btn-xs"><i class="fa fa-ban"></i></button></a>';
         return $this->response->withType('html')->withStringBody($html);
     }
 

@@ -154,6 +154,7 @@ $hasLinkedCombinedGroupSubmission = function ($conventionRegistrationId, $eventI
                     'Conventionregistrations.conventionseason_id' => (int)$currentRegistration->conventionseason_id,
                     'Conventionregistrations.user_id IN' => $schoolIds,
                 ])
+                ->all()
                 ->extract('id')
                 ->map(static function ($id) { return (int)$id; })
                 ->toList();
@@ -238,6 +239,12 @@ $countSubmission = function ($conventionRegistrationId, $eventId, $studentId = n
                 <?php
                 foreach ($packageregistration as $datarecord)
                 {
+                    if (($eventReviews[(int)$datarecord->id]['status'] ?? '') === 'pending') {
+                        echo '<div class="alert alert-warning"><strong>' . h($datarecord->Students->first_name . ' ' . $datarecord->Students->last_name) . ':</strong> Event choices are pending school review. Uploads unlock after approval. ';
+                        echo $this->Html->link('View event choices', ['action' => 'managestudentevents', $datarecord->slug]);
+                        echo '</div>';
+                        continue;
+                    }
                     if (!empty($datarecord->event_ids) && $datarecord->event_ids != NULL)
                     {
                         $studentEventList = $getStudentEventList($datarecord->event_ids);
@@ -712,11 +719,12 @@ document.querySelectorAll('.cr-pr-card').forEach(function(card) {
                     '  padding: 10px 12px !important;',
                     '}',
                     '.cr-pr-embed-main .input-multiple > input,',
-                    '.cr-pr-embed-main .input-multiple > select,',
+                    '.cr-pr-embed-main .input-multiple > select:not(.select2-hidden-accessible),',
                     '.cr-pr-embed-main .input-multiple > textarea {',
                     '  width: 100% !important;',
                     '  max-width: 100% !important;',
                     '}',
+                    '.cr-pr-embed-main .input-multiple > .select2-container { width: 100% !important; margin: 0 !important; }',
                     '.cr-pr-embed-main .input-multiple .help_text {',
                     '  display: block !important;',
                     '  margin-top: 6px !important;',
@@ -756,6 +764,9 @@ document.querySelectorAll('.cr-pr-card').forEach(function(card) {
                     '.cr-pr-embed-main .form-btns a[href*="/conventionregistrations/packageregistration"] {',
                     '  display: none !important;',
                     '}',
+                    'html[data-portal-theme="dark"] .user-portal .cr-pr-embed-main .form-group > label { color: #355a7f !important; }',
+                    'html[data-portal-theme="dark"] .user-portal .cr-pr-embed-main :is(.form-control:not(.select2-hidden-accessible), .select2-selection--multiple, .select2-search__field, .select2-selection__choice) { background: #fff !important; color: #1a3f67 !important; }',
+                    'html[data-portal-theme="dark"] .user-portal .cr-pr-embed-main :is(.select2-selection__rendered, .select2-selection__choice__remove) { color: #1a3f67 !important; }',
                     '@media (max-width: 767px) {',
                     '  .cr-pr-embed-main { padding: 8px !important; }',
                     '  .cr-pr-embed-main .dashboard-form { padding: 12px !important; }',
@@ -786,8 +797,7 @@ document.querySelectorAll('.cr-pr-card').forEach(function(card) {
             // Keep only the main content area in the iframe body.
             var mainContent = doc.querySelector('main.col-md-9, main.col-lg-10, main, .dashboard-form');
             if (mainContent && doc.body) {
-                var mainClone = mainContent.cloneNode(true);
-                mainClone.querySelectorAll('.form-btns a[href*="/conventionregistrations/packageregistration"]').forEach(function (node) {
+                mainContent.querySelectorAll('.form-btns a[href*="/conventionregistrations/packageregistration"]').forEach(function (node) {
                     if (node && node.parentNode) {
                         node.parentNode.removeChild(node);
                     }
@@ -797,9 +807,29 @@ document.querySelectorAll('.cr-pr-card').forEach(function(card) {
                 wrapper.style.maxWidth = '100%';
                 wrapper.style.margin = '0';
                 wrapper.style.padding = '16px';
-                wrapper.appendChild(mainClone);
+                wrapper.appendChild(mainContent);
+                doc.body.querySelectorAll('link[rel~="stylesheet"], style').forEach(function (stylesheet) {
+                    doc.head.appendChild(stylesheet);
+                });
                 doc.body.innerHTML = '';
                 doc.body.appendChild(wrapper);
+
+                if (win.jQuery && win.jQuery.fn.select2) {
+                    win.jQuery(mainContent).find('select.select2-hidden-accessible').each(function () {
+                        if (win.getComputedStyle(this).position !== 'absolute') {
+                            win.jQuery(this).select2('destroy');
+                            if (this.multiple) {
+                                this.querySelectorAll('option[value=""]').forEach(function (option) { option.remove(); });
+                                if (this.options.length > 1) {
+                                    var hint = doc.createElement('span');
+                                    hint.className = 'help_text';
+                                    hint.textContent = 'Hold Ctrl (or Command on Mac) to select multiple options.';
+                                    this.insertAdjacentElement('afterend', hint);
+                                }
+                            }
+                        }
+                    });
+                }
             }
 
             doc.querySelectorAll('.container-fluid.p-0 > .row > main, main.col-md-9, main.col-lg-10').forEach(function (mainEl) {

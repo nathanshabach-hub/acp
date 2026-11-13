@@ -16,7 +16,7 @@
 		integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
 		crossorigin="anonymous" referrerpolicy="no-referrer" />
 	<?php echo $this->Html->css('front/bootstrap.min.css'); ?>
-	<?php echo $this->Html->css('front/style_front.css?v=20260918n'); ?>
+	<?php echo $this->Html->css('front/style_front.css?v=20261014c'); ?>
 	<?php echo $this->Html->css('front/responsive.css?v=20260826e'); ?>
 	<?php echo $this->Html->css('front/forms.css?v=20260918c'); ?>
 	<?php echo $this->Html->css('front/font-awesome.min.css'); ?>

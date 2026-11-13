@@ -237,6 +237,12 @@ class ConventionregistrationstudentsController extends AppController {
 		$this->Eventsubmissions->deleteAll($condES);
 
 		if ($eventImplode === null) {
+			$pending = new \App\Service\CrossSchoolSponsorship($this->Conventionregistrationstudents->getConnection());
+			if ($pending->hasPending([(int)$convRegStudentD->id])) {
+				$this->Conventionregistrationstudents->updateAll(['event_ids' => null], ['id' => $convRegStudentD->id]);
+				$convRegStudentD->event_ids = null;
+				return true;
+			}
 			$this->Conventionregistrationstudents->deleteAll(['id' => $convRegStudentD->id]);
 			$convRegStudentD->event_ids = null;
 			return true;

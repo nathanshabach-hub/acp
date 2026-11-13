@@ -114,6 +114,9 @@ $this->Eventsubmissions = TableRegistry::getTableLocator()->get('Eventsubmission
                                     'Resultpositions.position >' => 0,
                                     'Resultpositions.position <=' => 6,
                                 ])
+                                ->notMatching('Eventsubmissions', static function ($query) {
+                                    return $query->where(['Eventsubmissions.guideline_breach' => \App\Service\GuidelineBreachPolicy::STATUS_ACCEPTED]);
+                                })
                                 ->contain(['Events'])
                                 ->order(['Resultpositions.position' => 'ASC'])
                                 ->all();
@@ -203,7 +206,13 @@ $this->Eventsubmissions = TableRegistry::getTableLocator()->get('Eventsubmission
                                 if (!empty($groupName)) {
                                     $groupConditions['Resultpositions.group_name'] = $groupName;
                                 }
-                                $checkstudentgroupposition = $this->Resultpositions->find()->where($groupConditions)->contain(['Events'])->first();
+                                $checkstudentgroupposition = $this->Resultpositions->find()
+                                    ->where($groupConditions)
+                                    ->notMatching('Eventsubmissions', static function ($query) {
+                                        return $query->where(['Eventsubmissions.guideline_breach' => \App\Service\GuidelineBreachPolicy::STATUS_ACCEPTED]);
+                                    })
+                                    ->contain(['Events'])
+                                    ->first();
                                 if ($checkstudentgroupposition) {
                                     $groupCheckStudentCP = false;
                                     if (!empty($checkstudentgroupposition->eventsubmission_id)) {

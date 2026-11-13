@@ -13,6 +13,34 @@ use Cake\I18n\I18n;
 class EventsubmissionsController extends AppController {
 
     public array $paginate = ['limit' => 50];
+
+    public function beforeFilter(\Cake\Event\EventInterface $event): void
+    {
+        parent::beforeFilter($event);
+        if ($event->isStopped()) {
+            return;
+        }
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        if ($this->request->getSession()->read('user_type') === 'Student'
+            && !in_array(strtolower((string)$this->request->getParam('action')), ['submitstudentevent', 'submitgroupevent'], true)) {
+            throw new \Cake\Http\Exception\ForbiddenException('Students can only submit their own approved individual or group events.');
+        }
+    }
+
+    private function checkStudentEventUpload($registration, $event): void
+    {
+        if (!$registration || !$event) {
+            throw new \Cake\Http\Exception\NotFoundException('Student registration or event not found.');
+        }
+        $service = new \App\Service\StudentEventSelections($this->Conventionregistrationstudents->getConnection());
+        try {
+            $service->context((int)$registration->id, (int)$this->request->getSession()->read('user_id'),
+                (string)$this->request->getSession()->read('user_type'));
+            $service->assertUploadAllowed((int)$registration->id, (int)$event->id, (int)$registration->student_id);
+        } catch (\DomainException $error) {
+            throw new \Cake\Http\Exception\ForbiddenException($error->getMessage());
+        }
+    }
 	
 	public function initialize(): void {
         parent::initialize();
@@ -207,13 +235,20 @@ class EventsubmissionsController extends AppController {
         }
 
         $conventionRegD = $this->Conventionregistrations->find()->where(['Conventionregistrations.id' => $selectedRegistrationId])->contain(["Conventionseasons"])->first();
+        $schoolId = $userDetails && $userDetails->user_type === 'School' ? (int)$userDetails->id : (int)($userDetails->school_id ?? 0);
+        if (!$conventionRegD || (int)$conventionRegD->user_id !== $schoolId) {
+            throw new \Cake\Http\Exception\ForbiddenException('Choose your own school convention registration.');
+        }
+        $teams = new \App\Service\CombinedTeams($this->Eventsubmissions->getConnection());
+        $this->set('combinedUploadLinks', $teams->submissionLinks($selectedRegistrationId));
+        $this->set('submissionsLocked', $this->areSubmissionsLocked($conventionRegD->conventionseason_id));
         if ($conventionRegD && !$this->areSubmissionsLocked($conventionRegD->conventionseason_id)) {
             $this->syncAutomaticGroupSubmissions($conventionRegD);
         }
 
         if ($conventionRegD && $user_type == "School") {
             $mixedGroupRows = $this->Crstudentevents->find()
-                ->select(['student_id', 'event_id'])
+                ->select(['student_id', 'event_id', 'group_name'])
                 ->where([
                     'Crstudentevents.conventionregistration_id' => $selectedRegistrationId,
                     'Crstudentevents.event_id >' => 0,
@@ -226,6 +261,9 @@ class EventsubmissionsController extends AppController {
             $mixedStudentIds = [];
             $mixedEventIds = [];
             foreach ($mixedGroupRows as $mixedGroupRow) {
+                if ($teams->approvedForGroup($selectedRegistrationId, (int)$mixedGroupRow->event_id, (string)$mixedGroupRow->group_name)) {
+                    continue;
+                }
                 $mixedStudentIds[] = (int)$mixedGroupRow->student_id;
                 $mixedEventIds[] = (int)$mixedGroupRow->event_id;
             }
@@ -242,7 +280,6 @@ class EventsubmissionsController extends AppController {
             }
 
             $approvedCombinedRows = $this->Combinerequests->find()
-                ->select(['event_id', 'user_id', 'combine_with_user_id'])
                 ->where([
                     'Combinerequests.status' => 1,
                     'Combinerequests.conventionseason_id' => (int)$conventionRegD->conventionseason_id,
@@ -257,6 +294,9 @@ class EventsubmissionsController extends AppController {
             $partnerSchoolIds = [];
 
             foreach ($mixedGroupRows as $mixedGroupRow) {
+                if ($teams->approvedForGroup($selectedRegistrationId, (int)$mixedGroupRow->event_id, (string)$mixedGroupRow->group_name)) {
+                    continue;
+                }
                 $studentId = (int)$mixedGroupRow->student_id;
                 $studentSchoolId = (int)($studentSchoolMap[$studentId] ?? 0);
                 if ($studentSchoolId > 0 && $studentSchoolId !== (int)$conventionRegD->user_id) {
@@ -266,6 +306,9 @@ class EventsubmissionsController extends AppController {
             }
 
             foreach ($approvedCombinedRows as $approvedCombinedRow) {
+                if ($approvedCombinedRow->combined_team_id) {
+                    continue;
+                }
                 $approvedEventIds[] = (int)$approvedCombinedRow->event_id;
                 $userIdA = (int)$approvedCombinedRow->user_id;
                 $userIdB = (int)$approvedCombinedRow->combine_with_user_id;
@@ -290,6 +333,7 @@ class EventsubmissionsController extends AppController {
 						'Events.id IN' => $approvedEventIds,
 						'Events.group_event_yes_no' => 1,
 					])
+					->all()
 					->extract('id')
 					->map(static function ($id) {
 						return (int)$id;
@@ -304,6 +348,7 @@ class EventsubmissionsController extends AppController {
                         'Conventionregistrations.conventionseason_id' => (int)$conventionRegD->conventionseason_id,
                         'Conventionregistrations.user_id IN' => $partnerSchoolIds,
                     ])
+                    ->all()
                     ->extract('id')
                     ->map(static function ($id) {
                         return (int)$id;
@@ -324,6 +369,12 @@ class EventsubmissionsController extends AppController {
             }
         }
 
+        if ($teams->available()) {
+            $submissionConditions = ['OR' => [
+                ['AND' => [$submissionConditions, ['Eventsubmissions.combined_team_id IS' => null]]],
+                ['Eventsubmissions.id IN' => $teams->sharedSubmissionIds($selectedRegistrationId) ?: [0]],
+            ]];
+        }
         $eventsubmissions = $this->Eventsubmissions->find()->where($submissionConditions)->contain(['Events','Students'])->order(['Eventsubmissions.id' => 'DESC'])->all();
 		$this->set('eventsubmissions',$eventsubmissions);
 		//$this->prx($condition);
@@ -336,7 +387,6 @@ class EventsubmissionsController extends AppController {
 	// Combine-approved partner schools share one team; return their registration ids so we don't duplicate submissions.
 	private function getApprovedCombinePartnerRegistrationIds($conventionRegD): array {
 		$approvedCombinedRows = $this->Combinerequests->find()
-			->select(['user_id', 'combine_with_user_id'])
 			->where([
 				'Combinerequests.status' => 1,
 				'Combinerequests.conventionseason_id' => (int)$conventionRegD->conventionseason_id,
@@ -349,6 +399,9 @@ class EventsubmissionsController extends AppController {
 
 		$partnerSchoolIds = [];
 		foreach ($approvedCombinedRows as $approvedCombinedRow) {
+            if ($approvedCombinedRow->combined_team_id) {
+                continue;
+            }
 			$userIdA = (int)$approvedCombinedRow->user_id;
 			$userIdB = (int)$approvedCombinedRow->combine_with_user_id;
 			if ($userIdA > 0 && $userIdA !== (int)$conventionRegD->user_id) {
@@ -369,6 +422,7 @@ class EventsubmissionsController extends AppController {
 				'Conventionregistrations.conventionseason_id' => (int)$conventionRegD->conventionseason_id,
 				'Conventionregistrations.user_id IN' => $partnerSchoolIds,
 			])
+			->all()
 			->extract('id')
 			->map(static function ($id) {
 				return (int)$id;
@@ -393,6 +447,9 @@ class EventsubmissionsController extends AppController {
 		$partnerRegistrationIds = $this->getApprovedCombinePartnerRegistrationIds($conventionRegD);
 
 		foreach ($groupedEventRows as $groupedEventRow) {
+            if ((new \App\Service\CombinedTeams($this->Eventsubmissions->getConnection()))->approvedForGroup((int)$conventionRegD->id, (int)$groupedEventRow->event_id, (string)$groupedEventRow->group_name)) {
+                continue;
+            }
 			$event = $this->Events->find()->where([
 				'Events.id' => $groupedEventRow->event_id,
 				'Events.auto_submission' => 1,
@@ -753,6 +810,10 @@ class EventsubmissionsController extends AppController {
 			$checkExists = $this->Eventsubmissions->find()->where(['Eventsubmissions.slug' => $eventsubmission_slug,'Eventsubmissions.conventionregistration_id' => $sess_selected_convention_registration_id])->first();
 			if($checkExists)
 			{
+                if ($checkExists->combined_team_id) {
+                    $this->Flash->error('This is the shared combined-team submission. Either school can update it from its event registration; it cannot be removed individually.');
+                    return $this->redirect(['action' => 'viewlist']);
+                }
 				// to remove document as well
 				if(file_exists(UPLOAD_EVENTS_SUBMISSION_DOCUMENT_PATH.$checkExists->mediafile_file_system_name) && !empty($checkExists->mediafile_file_system_name))
 				{
@@ -795,7 +856,10 @@ class EventsubmissionsController extends AppController {
 		
 		//$this->schoolAdminLoginCheck();
 		
-		$this->userLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
 		$this->multiLoginCheck(array("School","Teacher_Parent","Student"));
 		
 		// to check if registration is still open
@@ -840,11 +904,15 @@ class EventsubmissionsController extends AppController {
 				// to get list of books from name
 				$condEventBooks = array();
 				$condEventBooks[] = "(Books.id IN ($evBookIDS) )";
-				$booksDD = $this->Books->find()->where($condEventBooks)->combine('id', 'book_name')->toArray();
+				$booksDD = $this->Books->find()->where($condEventBooks)->all()->combine('id', 'book_name')->toArray();
 				$this->set('booksDD', $booksDD);
 			}
 		}
 		
+        $this->checkStudentEventUpload($convRegStudentD ?? null, $eventD ?? null);
+        if ((int)$eventD->group_event_yes_no !== 0) {
+            throw new \Cake\Http\Exception\ForbiddenException('Use the group upload page for this event.');
+        }
 		if($convRegStudentD->id>0 && $eventD->id>0)
 		{
 			// to get convention registration details
@@ -1087,7 +1155,10 @@ class EventsubmissionsController extends AppController {
 		
 		//$this->schoolAdminLoginCheck();
 		
-		$this->userLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
 		$this->multiLoginCheck(array("School","Teacher_Parent","Student"));
 		
 		//echo ' fsdf sdf sdf d';exit;
@@ -1161,7 +1232,7 @@ class EventsubmissionsController extends AppController {
 				// to get list of books from name
 				$condEventBooks = array();
 				$condEventBooks[] = "(Books.id IN ($evBookIDS) )";
-				$booksDD = $this->Books->find()->where($condEventBooks)->combine('id', 'book_name')->toArray();
+				$booksDD = $this->Books->find()->where($condEventBooks)->all()->combine('id', 'book_name')->toArray();
 				$this->set('booksDD', $booksDD);
 			}
 		}
@@ -1176,6 +1247,16 @@ class EventsubmissionsController extends AppController {
 			$this->Flash->error('Event record was not found.');
 			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'packageregistration']);
 		}
+        $this->checkStudentEventUpload($convRegStudentD, $eventD);
+        if ((int)$eventD->group_event_yes_no !== 1
+            || !$this->Crstudentevents->find()->where([
+                'Crstudentevents.conventionregistration_id' => $convRegStudentD->conventionregistration_id,
+                'Crstudentevents.student_id' => $convRegStudentD->student_id,
+                'Crstudentevents.event_id' => $eventD->id,
+                'Crstudentevents.group_name' => $crstudentEventsD->group_name,
+            ])->first()) {
+            throw new \Cake\Http\Exception\ForbiddenException('This student is not a member of the selected event group.');
+        }
 		
 		if($crstudentEventsD->id>0 && !empty($crstudentEventsD->group_name) && $crstudentEventsD->group_name != NULL && $eventD->id>0)
 		{
@@ -1199,12 +1280,24 @@ class EventsubmissionsController extends AppController {
 			return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'packageregistration']);
 		}
 		
+        $schoolId = $userDetails && $userDetails->user_type === 'School' ? (int)$userDetails->id : (int)($userDetails->school_id ?? 0);
+        if (!$userDetails || (int)$conventionRegD->user_id !== $schoolId
+            || (int)$convRegStudentD->conventionregistration_id !== (int)$conventionRegD->id
+            || (int)$crstudentEventsD->event_id !== (int)$eventD->id) {
+            throw new \Cake\Http\Exception\ForbiddenException('You can only submit for your own school event registration.');
+        }
+        $combinedTeam = (new \App\Service\CombinedTeams($this->Eventsubmissions->getConnection()))->approvedForGroup((int)$conventionRegD->id, (int)$eventD->id, (string)$crstudentEventsD->group_name);
+        $this->set('combinedTeam', $combinedTeam);
+        $submissionRegistrationId = $combinedTeam ? (int)$combinedTeam['source_registration_id'] : (int)$conventionRegD->id;
 		$existingGroupSubmission = $this->Eventsubmissions->find()->where([
-			'Eventsubmissions.conventionregistration_id' => $conventionRegD->id,
+			'Eventsubmissions.conventionregistration_id' => $submissionRegistrationId,
 			'Eventsubmissions.event_id' => $eventD->id,
 			'Eventsubmissions.student_id' => 0,
 			'Eventsubmissions.group_name' => $crstudentEventsD->group_name,
 		])->order(['Eventsubmissions.id' => 'DESC'])->first();
+        if ($combinedTeam && (!$existingGroupSubmission || (int)$existingGroupSubmission->combined_team_id !== (int)$combinedTeam['id'])) {
+            throw new \Cake\Http\Exception\ConflictException('The shared submission is missing. Contact the events team.');
+        }
 		
 		// to get students for this group
 		$groupStudentListArr 	= array();
@@ -1295,7 +1388,7 @@ class EventsubmissionsController extends AppController {
 			$eventSubmissionInput['report'] = '';
 			$eventSubmissionInput['score_sheet'] = '';
 			$eventSubmissionInput['additional_documents'] = '';
-			$data = $this->Eventsubmissions->patchEntity($eventsubmissions, $eventSubmissionInput);
+			$data = $this->Eventsubmissions->patchEntity($eventsubmissions, array_intersect_key($eventSubmissionInput, array_flip(['context_box'])));
             if (count($data->getErrors()) == 0) {
 				
 				$book_ids = $eventSubmissionInput['book_ids'] ?? [];
@@ -1360,17 +1453,22 @@ class EventsubmissionsController extends AppController {
 					$data->additional_documents =  $returnedUploadImageArray[0];
 				}
 				
-                $data->slug = 'event-submission-'.$conventionRegD->id.'-'.time().'-'.rand(100,1000000);
+                if (!$combinedTeam) {
+                    $data->slug = 'event-submission-'.$conventionRegD->id.'-'.time().'-'.rand(100,1000000);
+                }
 				
-				$data->conventionregistration_id	= $conventionRegD->id;
+				$data->conventionregistration_id	= $submissionRegistrationId;
 				$data->conventionseason_id			= $conventionRegD->conventionseason_id;
 				$data->convention_id				= $conventionRegD->convention_id;
-				$data->user_id						= $conventionRegD->user_id;
+				$data->user_id						= $combinedTeam ? $existingGroupSubmission->user_id : $conventionRegD->user_id;
 				$data->season_id 					= $conventionRegD->season_id;
 				$data->season_year 					= $conventionRegD->season_year;
 				$data->event_id 					= $eventD->id;
 				$data->event_id_number 				= $eventD->event_id_number;
 				
+                if ($combinedTeam) {
+                    $data->combined_team_id = (int)$combinedTeam['id'];
+                }
 				$data->group_name 					= $crstudentEventsD->group_name;
 				$data->student_id 					= 0;
 				
@@ -1387,6 +1485,8 @@ class EventsubmissionsController extends AppController {
 					
 					$this->Flash->success('Events submission completed successfully for group.');
                     $this->redirect(['controller' => 'conventionregistrations', 'action' => 'packageregistration']);
+                } else {
+                    $this->Flash->error('The group submission could not be saved. Please try again or contact the events team.');
                 }
             } else {
                 // $this->Flash->error('Please below listed errors.');
@@ -1484,6 +1584,7 @@ class EventsubmissionsController extends AppController {
 						'Crstudentevents.group_name' => $groupName,
 						'Crstudentevents.student_id >' => 0,
 					])
+					->all()
 					->extract('student_id')
 					->map(static function ($sid) {
 						return (int)$sid;

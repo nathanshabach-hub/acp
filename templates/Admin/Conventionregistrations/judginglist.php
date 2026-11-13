@@ -284,27 +284,6 @@
                     'in_person' => ['label' => 'In-Person', 'rows' => []],
                 ];
 
-                $preJudgingDivisionNames = [
-                    'photography',
-                    'design',
-                    'technology',
-                    'design and technology',
-                ];
-
-                $preJudgingEventNames = [
-                    'poetry writing u16',
-                    'poetry writing open',
-                    'persuasive essay writing open',
-                    'short story writing open',
-                    'short story writing u16',
-                    'music vocal composition u16',
-                    'music vocal composition open',
-                    'music vocal arranging u16',
-                    'music vocal arranging open',
-                    'book report u16',
-                    'book report open',
-                ];
-
                 $inPersonExhibitEventNames = [
                     'science collection u16',
                     'science collection open',
@@ -342,8 +321,6 @@
                     return trim((string)$value);
                 };
 
-                $preJudgingDivisionLookup = array_fill_keys(array_map($normalizeJudgingLabel, $preJudgingDivisionNames), true);
-                $preJudgingEventLookup = array_fill_keys(array_map($normalizeJudgingLabel, $preJudgingEventNames), true);
                 $inPersonExhibitEventLookup = array_fill_keys(array_map($normalizeJudgingLabel, $inPersonExhibitEventNames), true);
                 $physicalEducationDivisionLookup = array_fill_keys(array_map($normalizeJudgingLabel, $physicalEducationDivisionNames), true);
                 $physicalEducationEventLookup = array_fill_keys(array_map($normalizeJudgingLabel, $physicalEducationEventNames), true);
@@ -356,7 +333,7 @@
                     $rowDivisionName = $normalizeJudgingLabel($bucketRow['division_name'] ?? '');
                     $rowEventName = $normalizeJudgingLabel($bucketRow['event_name'] ?? '');
 
-                    if (isset($preJudgingDivisionLookup[$rowDivisionName]) || isset($preJudgingEventLookup[$rowEventName])) {
+                    if (\App\Utility\JudgingEventCategories::isPreJudged($rowDivisionName, $rowEventName)) {
                         $bucketKey = 'pre_judging';
                     } elseif (isset($inPersonExhibitEventLookup[$rowEventName])) {
                         $bucketKey = 'in_person_exhibits';

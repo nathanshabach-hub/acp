@@ -117,7 +117,7 @@ class SchedulingtimingsTable extends Table {
                         $conditions[] = ['Schedulingtimings.user_id' => $studentId];
                         $conditions[] = ['Schedulingtimings.user_id_opponent' => $studentId];
                     }
-                    return $exp->or_($conditions);
+                    return $exp->or($conditions);
                 })
                 ->all()
                 ->toArray();

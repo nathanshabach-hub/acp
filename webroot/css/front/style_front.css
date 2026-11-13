@@ -5,6 +5,28 @@ body {
 	font-family: 'poppinsregular';
 }
 
+body.public-site {
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	min-height: 100dvh;
+}
+
+.public-site > section,
+.public-site > footer {
+	flex-shrink: 0;
+}
+
+.public-content {
+	display: flex;
+	flex: 1 0 auto;
+	flex-direction: column;
+}
+
+.public-content > section {
+	flex: 1 0 auto;
+}
+
 @font-face {
 	font-family: 'poppinsregular';
 	src: url(../../fonts/poppins-regular-webfont.woff) format('woff');
@@ -576,8 +598,6 @@ footer {
 }
 
 .profile-edit-page {
-	max-width: 1240px;
-	margin-right: auto;
 	padding-top: 28px;
 	padding-bottom: 48px;
 }
@@ -590,6 +610,9 @@ footer {
 }
 
 .profile-edit-form.dashboard-form {
+	width: 100%;
+	float: none;
+	max-width: none;
 	margin: 0;
 	padding: 32px;
 	border: 1px solid #d9e1e8;
@@ -717,6 +740,11 @@ footer {
 }
 
 .change-password-form.profile-edit-form {
+	width: 100%;
+	float: none;
+	max-width: 700px;
+	margin-left: auto;
+	margin-right: auto;
 	padding: 28px 30px;
 }
 
@@ -1948,6 +1976,12 @@ nav.navbar .container {
 .cr-students-panel {
 	padding: 0;
 	margin: 0;
+}
+
+.user-portal .panel-body.cr-students-panel {
+	border: 0;
+	margin-top: 0;
+	padding-top: 0;
 }
 
 .cr-students-table th {
@@ -3975,6 +4009,30 @@ nav.navbar .container {
 .hp-badge svg {
     opacity: 0.75;
     flex-shrink: 0;
+}
+
+.hp-elastic-word {
+	display: inline-block;
+	color: inherit !important;
+	white-space: nowrap;
+}
+
+.hp-elastic-char {
+	display: inline-block;
+	color: inherit !important;
+	transform-origin: center center;
+}
+
+.hp-badge-label {
+	display: inline-block;
+	color: inherit !important;
+	white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.hp-elastic-char {
+		transform: none !important;
+	}
 }
 
 /* Right card */

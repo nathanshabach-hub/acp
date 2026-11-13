@@ -36,6 +36,7 @@ if($checkEvalJudge && $checkEvalJudge->id>0)
 ?>
 <?php if ($isPopupPreview) { ?>
 <style>
+.portal-header,
 nav.navbar.navbar-expand-lg,
 #sidebarMenu,
 footer,
@@ -76,6 +77,7 @@ $(document).ready(function () {
 					<div class="dashboard-text">
 						<div class="classform-container">
 							<h2>JUDGES FORM - <?php echo $evalFormD->name; ?></h2>
+							<?= $this->element('Judgeevaluations/guidelines', ['eventD' => $eventD]) ?>
 							<div class="checkboxrow fwbold">
 								<div class="singlechecknox">
 									<input type="checkbox" id="tag_open" name="division_ids[]" value="Open" <?php if(is_array($selected_division_ids_explode) && in_array("Open",$selected_division_ids_explode)) { echo 'checked'; } ?>>
@@ -126,8 +128,8 @@ $(document).ready(function () {
 										echo "(".implode(", ",array_slice($groupMembersList,0,2)).")";
 										
 									?>
-									<a title="View all members of group" href="#" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#exampleModal_show" style="width:45px;">
-											<i class="fa fa-eye"></i>
+									<a title="View all members of group" aria-label="View all members of group" href="#" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#exampleModal_show" style="width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+											<i class="fa fa-eye" aria-hidden="true" style="margin:0;"></i>
 										</a>
 									<div class="modal fade" id="exampleModal_show" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
 									  <div class="modal-dialog">

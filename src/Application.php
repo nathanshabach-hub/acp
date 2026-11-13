@@ -13,6 +13,9 @@ use Cake\Routing\Middleware\RoutingMiddleware;
 use Cake\Routing\RouteBuilder;
 use Cake\Routing\Router;
 use App\Middleware\LegacyRequestMiddleware;
+use App\Middleware\ScopedPublicationCsrfMiddleware;
+use App\Middleware\EnvironmentSafetyMiddleware;
+use App\Deployment\SafetyPolicy;
 
 class Application extends BaseApplication
 {
@@ -22,6 +25,7 @@ class Application extends BaseApplication
         parent::bootstrap();
 
         if (PHP_SAPI === 'cli') {
+            SafetyPolicy::assertCommandAllowed($GLOBALS['argv'] ?? []);
             $this->bootstrapCli();
         }
 
@@ -41,7 +45,9 @@ class Application extends BaseApplication
                 'cacheTime' => Configure::read('Asset.cacheTime'),
             ]))
             ->add(new RoutingMiddleware($this))
-            ->add(new BodyParserMiddleware());
+            ->add(new EnvironmentSafetyMiddleware())
+            ->add(new BodyParserMiddleware())
+            ->add(new ScopedPublicationCsrfMiddleware());
 
         return $middlewareQueue;
     }

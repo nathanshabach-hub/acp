@@ -1,12 +1,12 @@
 <?php echo $this->Html->script('ajax-pagging.js'); ?>
-<div class="content-wrapper">
+<div class="content-wrapper admin-list-page admin-events-page">
     <section class="content-header">
       <h1>
-         Manage Global Events 
+         Manage Global Events
       </h1>
       <ol class="breadcrumb">
-          <li><?php echo $this->Html->link('<i class="fa fa-dashboard"></i> <span>Dashboard</span> ', array('controller'=>'admins', 'action'=>'dashboard'), array('escape'=>false));?></li>
-          <li class="active"> Global Events List </li>
+          <li><?php echo $this->Html->link('<i class="fa fa-dashboard"></i> <span>Dashboard</span> ', ['controller'=>'admins', 'action'=>'dashboard'], ['escape'=>false]);?></li>
+          <li class="active">Global Events List</li>
       </ol>
     </section>
 
@@ -14,19 +14,14 @@
         <div class="box box-info">
             <div class="ersu_message"> <?php echo $this->Flash->render() ?></div>
             <div class="admin_search">
-                <?php echo $this->Form->create(Null, ['id'=>'adminSearch']); ?>
-                    <div class="form-group align_box dtpickr_inputs">
+                <?php echo $this->Form->create(null, ['id'=>'adminSearch']); ?>
+                    <div class="form-group align_box dtpickr_inputs search_frm">
                        <span class="hints">Search Event</span>
-                       <span class="hint">
-                           <?php echo $this->Form->input('Events.keyword', ['label'=>false, 'type'=>'text',  'div'=>false, 'class'=>'form-control', 'placeholder'=>'Search by Event Name Or Number']); ?>
+                       <span class="hint list_sel hint--keyword">
+                           <?php echo $this->Form->input('Events.keyword', ['label'=>false, 'type'=>'text',  'div'=>false, 'class'=>'form-control', 'placeholder'=>'Search by Event Name Or Number', 'value' => isset($keyword) ? $keyword : '']); ?>
                        </span>
-					   <span class="hint">
-                           <?php echo $this->Form->select('Events.division_id', $divisionDD, ['id' => 'division_id', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' => 'Choose Division', 'style' => 'margin-bottom:2px;']); ?>
-							<script>
-								$(document).ready(function() {
-									$('#division_id').select2();
-								});
-							</script>
+					   <span class="hint list_sel hint--division">
+                           <?php echo $this->Form->select('Events.division_id', $divisionDD, ['id' => 'division_id', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' => 'Choose Division', 'value' => isset($division_id) ? $division_id : '']); ?>
                        </span>
                       
                        <div class="admin_asearch">
@@ -44,3 +39,8 @@
         </div>
     </section>
 </div>
+<script>
+    $(document).ready(function() {
+        $('#division_id').select2();
+    });
+</script>

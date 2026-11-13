@@ -30,7 +30,6 @@ const CACHEABLE_ROUTES = [
   /\/conventionregistrations\/myregistrations/,
   /\/conventionregistrations\/teachers/,
   /\/conventionregistrations\/students/,
-  /\/conventionregistrations\/managestudentevents\//,
   /\/conventionregistrations\/evententries\//,
   /\/eventsubmissions\/spellingseventsentries\//,
   /\/eventsubmissions\/distanceseventsentries\//,
@@ -41,9 +40,33 @@ const CACHEABLE_ROUTES = [
 ];
 
 const NEVER_CACHE = [
+  /\/conventionregistrations\/(?:judgepricestructure|judgesregisterconvention)(?:\/|$)/,
   /\/admin\//,
   /\/users\/login/,
   /\/users\/logout/,
+  /\/users\/notifications(?:\/|$)/,
+  /\/users\/notificationinvoice(?:\/|$)/,
+  /\/users\/notificationaction(?:\/|$)/,
+  /\/users\/acceptsupervisoragreement(?:\/|$)/,
+  /\/users\/crossschoolrequests(?:\/|$)/,
+  /\/users\/(?:editprofile|editteacher|changepassword)(?:\/|$)/,
+  /\/users\/(?:forgotpassword|resetpassword)(?:\/|$)/,
+  /\/users\/(?:studentsetup|studentaccess|bulkstudentaccess)(?:\/|$)/,
+  /\/users\/(?:openstudentportal|returntoschool|dashboard|myschedule|myevents)(?:\/|$)/,
+  /\/conventionregistrations\/permissionsform(?:adult|s)(?:\/|$)/,
+  /\/users\/students(?:\/|$)/,
+  /\/users\/archivestudents(?:\/|$)/,
+  /\/conventionregistrations\/students(?:\/|$)/,
+  /\/conventionregistrations\/addstudent(?:\/|$)/,
+  /\/conventionregistrations\/(?:studentevents|managestudentevents|reviewstudentevents|editstudentevent|packageregistration)(?:\/|$)/,
+  /\/eventsubmissions\/submitstudentevent(?:\/|$)/,
+  /\/combinerequests\/viewlist(?:\/|$)/,
+  /\/combinerequests\/addrequest(?:\/|$)/,
+  /\/eventsubmissions\/(?:viewlist|submitgroupevent)(?:\/|$)/,
+  /\/groups\/eventgroups(?:\/|$)/,
+  /\/groups\//,
+  /\/heartevents\//,
+  /\/conventionregistrations\/packageregistrationprint(?:\/|$)/,
   /\/judgeevaluations\/syncpending/,
 ];
 
@@ -83,13 +106,35 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  if (url.pathname.endsWith('.css')) {
+    event.respondWith(refreshStylesheet(req));
+    return;
+  }
+
   event.respondWith(cacheFirst(req));
 });
+
+async function refreshStylesheet(req) {
+  try {
+    const response = await fetch(req, { cache: 'no-cache' });
+    if (response.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      await cache.put(req, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    console.error('[SW] Stylesheet unavailable:', error);
+    return new Response('', { status: 408 });
+  }
+}
 
 async function handleNavigate(req) {
   try {
     const networkResponse = await fetch(req);
-    if (CACHEABLE_ROUTES.some(re => re.test(new URL(req.url).pathname))) {
+    if (!/no-store/i.test(networkResponse.headers.get('Cache-Control') || '') &&
+        CACHEABLE_ROUTES.some(re => re.test(new URL(req.url).pathname))) {
       const cache = await caches.open(DATA_CACHE);
       cache.put(req, networkResponse.clone());
     }
@@ -107,7 +152,7 @@ async function cacheFirst(req) {
 
   try {
     const networkResponse = await fetch(req);
-    if (networkResponse.ok) {
+    if (networkResponse.ok && !/no-store/i.test(networkResponse.headers.get('Cache-Control') || '')) {
       const cache = await caches.open(STATIC_CACHE);
       cache.put(req, networkResponse.clone());
     }

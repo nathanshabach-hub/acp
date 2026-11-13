@@ -1,3 +1,7 @@
+<style>
+.admin-transaction-details-page > .content { min-height: 0; padding-bottom: 12px; }
+.admin-transaction-details-page > .content > .box { margin-bottom: 0; }
+</style>
 <script type="text/javascript">
     $(document).ready(function() {
         $("#adminForm").validate();
@@ -14,6 +18,14 @@
           <li class="active">Transaction Details </li>
       </ol>
     </section>
+    <div class="ersu_message"><?= $this->Flash->render() ?></div>
+    <?php if ((int)$transactionD->status === 4): ?>
+        <section class="content">
+            <div class="alert alert-warning"><strong>Cancelled request</strong><br>
+                <?= nl2br(h($transactionD->transaction_data)) ?>
+            </div>
+        </section>
+    <?php endif; ?>
 	
 	<?php
 	if($transactionD->status == 2 || $transactionD->status == 3)
@@ -25,7 +37,6 @@
                 <details class="admin-accordion-item" open>
                     <summary>Payment Review</summary>
                     <div class="admin-accordion-body">
-                        <div class="ersu_message"> <?php echo $this->Flash->render() ?> </div>
                         <?php echo $this->Form->create($transactions, ['id'=>'adminForm', 'type' => 'file']); ?>
                         <div class="form-horizontal">
                             <div class="box-body">
@@ -80,12 +91,26 @@
 	}
 	?>
 
+    <?php if (in_array((int)$transactionD->status, [1, 2, 3], true)): ?>
+        <section class="content">
+            <div class="box box-info">
+                <div class="admin-transaction-accordion">
+                    <details id="generate-invoice" class="admin-accordion-item"<?= $this->request->getQuery('invoice') === 'open' ? ' open' : '' ?>>
+                        <summary>Generate Invoice</summary>
+                        <div class="admin-accordion-body">
+                            <?= $this->element('Admin/Transactions/invoice', $invoiceData) ?>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
+
     <section class="content">
      <div class="box box-info">
             <div class="box-header with-border">
                 <h3 class="box-title">Transaction Details</h3>
             </div>
-            <div class="ersu_message"> <?php echo $this->Flash->render() ?> </div>
 			
 			 
 			<div class="tbl-resp-listing">
@@ -93,7 +118,7 @@
                     <thead class="cf ajshort">
                         <tr>
                             <th class="sorting_paging">Convention</th>
-                            <th class="sorting_paging">School</th>
+                            <th class="sorting_paging">School / Judge</th>
                             <th class="sorting_paging">Season Year</th>
                             <th class="sorting_paging">Price Structure</th>
                             <th class="sorting_paging">Discount</th>
@@ -131,7 +156,7 @@
                             <?php //pr($datarecord); exit;?> 
                             <tr>
                                 <td data-title="Convention"><?php echo $transactionD->Conventions['name'];?></td>
-                                <td data-title="School"><?php echo $transactionD->Users['first_name'];?></td>
+                                <td data-title="School / Judge"><?= h($transactionD->Users['user_type'] === 'Judge' ? trim($transactionD->Users['first_name'] . ' ' . $transactionD->Users['last_name']) : $transactionD->Users['first_name']) ?></td>
 								<td data-title="Season Year"><?php echo $transactionD->season_year; ?></td>
 								<td data-title="Price Structure"><?php echo $priceStructureCR[$transactionD->price_structure]; ?></td>
 								<td data-title="Discount"><?php echo CURR.' '.number_format($transactionD->total_discount_applied,2); ?></td>

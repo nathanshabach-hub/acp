@@ -6,7 +6,7 @@
                     <tbody><tr style="background-color:#1c2452;">
                             <td>
                                 <!--<a href="<?php echo HTTP_PATH; ?>">-->
-                                    <img width="160" height="auto" alt="<?php echo SITE_TITLE; ?>" src="<?php echo HTTP_PATH; ?>/img/front/main-logo.png"/>
+                                    <img width="160" alt="<?php echo SITE_TITLE; ?>" style="display:block; width:160px; max-width:100%; height:auto; border:0;" src="<?= h($emailHeaderLogo ?? HTTP_PATH . '/img/front/main-logo.png') ?>"/>
                                 <!--</a>-->
                             </td>
                         </tr>

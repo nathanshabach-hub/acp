@@ -1,1 +1,0 @@
-<?php echo $this->Html->link('Closed', 'Javascript:void(0);', ['class' => 'list_view', 'escape' => false]); ?>

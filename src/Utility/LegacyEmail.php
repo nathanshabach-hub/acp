@@ -63,7 +63,7 @@ class LegacyEmail
 			return;
 		}
 
-		$className = '\\Cake\\Mailer\\Mailer';
+		$className = '\\App\\Mailer\\PortalMailer';
 		$this->mailer = new $className(...$args);
 	}
 
@@ -84,6 +84,12 @@ class LegacyEmail
 		}
 
 		$this->template = $template;
+		return $this;
+	}
+
+	public function setViewClass(string $className): self
+	{
+		$this->mailer->viewBuilder()->setClassName($className);
 		return $this;
 	}
 
@@ -177,6 +183,9 @@ class LegacyEmail
 
 	public function send(?string $content = null)
 	{
+		if (\Cake\Core\Configure::read('Environment.name') === 'demo') {
+			$this->mailer->setTransport(self::demoTransport());
+		}
 		if (class_exists('\\Cake\\Mailer\\Email')) {
 			return $this->mailer->send($content);
 		}
@@ -191,8 +200,18 @@ class LegacyEmail
 		if (!empty($this->viewVars)) {
 			$viewBuilder->setVars($this->viewVars);
 		}
-		if ($this->emailFormat !== null && method_exists($this->mailer, 'setEmailFormat')) {
+		if ($this->emailFormat !== null) {
 			$this->mailer->setEmailFormat($this->emailFormat);
+		}
+		if ($this->layout === 'admintemplate' && in_array($this->mailer->getEmailFormat(), ['html', 'both'], true)) {
+			$this->mailer->addAttachments([
+				'accelerate-logo.png' => [
+					'file' => WWW_ROOT . 'img/front/main-logo.png',
+					'mimetype' => 'image/png',
+					'contentId' => 'accelerate-header-logo',
+				],
+			]);
+			$viewBuilder->setVar('emailHeaderLogo', 'cid:accelerate-header-logo');
 		}
 		if ($this->to !== null) {
 			$this->mailer->setTo($this->to);
@@ -215,12 +234,24 @@ class LegacyEmail
 
 	public function __call(string $method, array $args)
 	{
+		if (\Cake\Core\Configure::read('Environment.name') === 'demo' && strtolower($method) === 'deliver') {
+			$this->mailer->setTransport(self::demoTransport());
+		}
 		$result = $this->mailer->{$method}(...$args);
 		if ($result === $this->mailer) {
 			return $this;
 		}
 
 		return $result;
+	}
+
+	private static function demoTransport(): \Cake\Mailer\AbstractTransport
+	{
+		$config = (array)\Cake\Core\Configure::read('EmailTransport.default', []);
+		$className = $config['className'] ?? \App\Mailer\Transport\DemoTransport::class;
+		unset($config['className']);
+
+		return new $className($config);
 	}
 }
 
@@ -239,6 +270,12 @@ class LegacyEmailViewBuilderProxy
 	public function setTemplate(string $template)
 	{
 		$this->legacyEmail->setTemplate($template);
+		return $this;
+	}
+
+	public function setClassName(string $className): self
+	{
+		$this->legacyEmail->setViewClass($className);
 		return $this;
 	}
 

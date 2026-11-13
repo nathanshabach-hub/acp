@@ -31,7 +31,8 @@ class UsersController extends AppController {
     public function beforeFilter(EventInterface $event): void {
         parent::beforeFilter($event);
 
-        $this->Auth->allow(['login','registration','registerprevdetails','forgotpassword','resetpassword','teachersetpassword','dashboard','myschedule','myevents','editprofile','changepassword','teachers','editteacher','addteacher','archiveteacher','restoreteacher','students','addstudent','editstudent','archivestudent','restorestudent','generatestudentlogincode','generateallstudentlogincodes','judgesregistration','squad247','squad247submit','logout','judgesconfirmation','judgeeditprofile','applyforjudge','switchprofile','judgeexperience','judgingform','logintotest']);
+        $this->Auth->allow(['notificationinvoice']);
+        $this->Auth->allow(['login','registration','registerprevdetails','forgotpassword','resetpassword','teachersetpassword','dashboard','notifications','notificationaction','crossschoolrequests','cancelcrossschoolrequest','myschedule','myevents','editprofile','changepassword','teachers','editteacher','addteacher','archiveteacher','restoreteacher','students','addstudent','editstudent','archivestudent','restorestudent','generatestudentlogincode','generateallstudentlogincodes','judgesregistration','squad247','squad247submit','logout','judgesconfirmation','judgeeditprofile','applyforjudge','switchprofile','judgeexperience','judgingform','logintotest']);
 
         $this->loadModel("Emailtemplates");
         $this->loadModel("Conventions");
@@ -55,6 +56,7 @@ class UsersController extends AppController {
         
         $this->viewBuilder()->setLayout("home");		
         $this->set('title_for_layout', 'Login '.TITLE_FOR_PAGES);
+        $this->response = $this->response->withHeader('Cache-Control', 'no-store');
         
         $user_id = $this->request->getSession()->read("user_id");
         
@@ -70,31 +72,38 @@ class UsersController extends AppController {
         if ($this->request->is('post'))
         {	
             $formData = (array)$this->request->getData('Users');
+            foreach (['email_address', 'password', 'user_type', 'student_code'] as $key) {
+                if (isset($formData[$key]) && !is_string($formData[$key])) {
+                    throw new \Cake\Http\Exception\BadRequestException('Invalid login fields.');
+                }
+            }
 
             $email_address = trim((string)($formData['email_address'] ?? ''));
             $password = (string)($formData['password'] ?? '');
             $user_type = trim((string)($formData['user_type'] ?? ''));
             $student_code = strtoupper(trim((string)($formData['student_code'] ?? '')));
-            $student_last4 = strtoupper(trim((string)($formData['student_last4'] ?? '')));
+            $studentCredentials = null;
+            if (!array_key_exists($user_type, $loginUserTypes)) {
+                $this->Flash->error('Please choose a valid account type.');
+                return;
+            }
 
             if ($user_type === 'Student') {
-                $userInfo = null;
-
-                if ($student_code === '' || $student_last4 === '') {
-                    $this->Flash->error('Please enter student code and first 4 letters of last name.');
-                    return;
-                }
-
-                // Student code is mapped to customer_code in this codebase.
-                $studentUser = $this->Users->find()
-                    ->where(['Users.user_type' => 'Student', 'Users.customer_code' => $student_code])
-                    ->first();
-
-                if ($studentUser) {
-                    $lastNamePrefix = strtoupper(substr((string)$studentUser->last_name, 0, 4));
-                    if ($lastNamePrefix === $student_last4) {
-                        $userInfo = $studentUser;
+                try {
+                    $portal = new \App\Service\StudentPortalAccounts($this->Users->getConnection());
+                    if (!$portal->allowAttempt($this->request->clientIp(), $student_code)) {
+                        $this->Flash->error('Too many student login attempts. Please wait 15 minutes.');
+                        return;
                     }
+                    $studentCredentials = $portal->authenticate($student_code, $password);
+                    $userInfo = $this->Users->find()->where(['Users.id' => (int)$studentCredentials['student_id'], 'Users.user_type' => 'Student'])->first();
+                } catch (\DomainException $error) {
+                    $this->Flash->error('Invalid student ID or password. For first-time setup or a forgotten password, ask your school for a setup code.');
+                    return;
+                } catch (\Exception $error) {
+                    $this->log('Student login unavailable: ' . $error->getMessage(), 'error');
+                    $this->Flash->error('Student login is unavailable. Please contact the events team.');
+                    return;
                 }
             } else {
                 // Step 1 :: To check in users table
@@ -115,11 +124,19 @@ class UsersController extends AppController {
                 elseif ($userInfo->status == 3) {
                     $this->Flash->error('Your account is rejected. Please contact events team.');
                 }				
-                elseif ($user_type === 'Student' || (!empty($userInfo) && crypt($password, $userInfo->password) == $userInfo->password)) {
+                elseif (($user_type === 'Student' && $studentCredentials !== null) || ($user_type !== 'Student' && crypt($password, $userInfo->password) == $userInfo->password)) {
                     
                     
                     //$this->prx($userInfo);
 
+                    $this->request->getSession()->renew();
+                    $this->request->getSession()->delete('student_portal_version');
+                    $this->request->getSession()->delete('current_session_profile_type');
+                    $this->request->getSession()->delete('sess_selected_convention_registration_id');
+                    $this->request->getSession()->delete('sess_selected_convention_id');
+                    if ($studentCredentials !== null) {
+                        $this->request->getSession()->write('student_portal_version', (int)$studentCredentials['credential_version']);
+                    }
                     $this->request->getSession()->write("user_id", $userInfo->id);
                     $this->request->getSession()->write("email_address", $userInfo->email_address);
                     $this->request->getSession()->write("user_type", $userInfo->user_type);
@@ -134,7 +151,7 @@ class UsersController extends AppController {
                     $this->Users->updateAll(['forgot_password_status' => '0','last_login' => date('Y-m-d H:i:s')], ["id" => $userInfo->id]);
                     
                     
-                    if($convention_slug && $season_id>0)
+                    if($user_type !== 'Student' && $convention_slug && $season_id>0)
                     {
                         // now check if registration for convention required
                         // 1. Check convention exists
@@ -214,6 +231,199 @@ class UsersController extends AppController {
         
     }
     
+    public function studentsetup() {
+        $this->request->allowMethod(['get', 'post']);
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Student Password Setup ' . TITLE_FOR_PAGES);
+        $this->response = $this->response->withHeader('Cache-Control', 'no-store');
+        if ($this->request->is('post')) {
+            $input = (array)$this->request->getData('Student');
+            foreach (['login_id', 'code', 'password', 'confirmation'] as $key) {
+                if (!is_string($input[$key] ?? null)) {
+                    throw new \Cake\Http\Exception\BadRequestException('Complete all student setup fields.');
+                }
+            }
+            try {
+                $portal = new \App\Service\StudentPortalAccounts($this->Users->getConnection());
+                if (!$portal->allowAttempt($this->request->clientIp(), $input['login_id'])) {
+                    $this->Flash->error('Too many student setup attempts. Please wait 15 minutes.');
+                    return;
+                }
+                $portal->setup($input['login_id'], $input['code'], $input['password'], $input['confirmation']);
+                $this->Flash->success('Student password saved. Select Student and sign in with your student ID and new password.');
+                return $this->redirect(['action' => 'login']);
+            } catch (\DomainException $error) {
+                $this->Flash->error($error->getMessage());
+            } catch (\Exception $error) {
+                $this->log('Student password setup failed: ' . $error->getMessage(), 'error');
+                $this->Flash->error('Student password setup is unavailable. Please contact the events team.');
+            }
+        }
+    }
+
+    public function openstudentportal() {
+        $this->request->allowMethod(['post']);
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $school = $this->crossSchoolAccount();
+        $session = $this->request->getSession();
+        if ($session->read('school_student_access') !== null) {
+            throw new \Cake\Http\Exception\ForbiddenException('Return to your school account before opening another student portal.');
+        }
+        $slug = $this->request->getData('student_slug');
+        if (!is_string($slug) || $slug === '') {
+            throw new \Cake\Http\Exception\BadRequestException('Select a student from your school list.');
+        }
+        $student = $this->Users->find()->where([
+            'Users.slug' => $slug, 'Users.school_id' => $school->id, 'Users.user_type' => 'Student',
+            'Users.status' => 1, 'Users.activation_status' => 1,
+        ])->first();
+        if (!$student) {
+            throw new \Cake\Http\Exception\NotFoundException('Active, verified student not found in your school.');
+        }
+        $context = [];
+        foreach (['sess_selected_convention_registration_id', 'sess_selected_convention_id', 'current_session_profile_type', 'last_login', 'returnUrl'] as $key) {
+            $context[$key] = $session->read($key);
+            $session->delete($key);
+        }
+        $session->renew();
+        $session->write('school_student_access', [
+            'school_id' => (int)$school->id, 'student_id' => (int)$student->id,
+            'student_name' => trim($student->first_name . ' ' . $student->last_name),
+            'context' => $context,
+        ]);
+        $session->delete('student_portal_version');
+        $session->write('user_id', (int)$student->id);
+        $session->write('user_type', 'Student');
+        $session->write('email_address', $student->email_address);
+        $this->log('School student portal opened: school ' . (int)$school->id . ', student ' . (int)$student->id, 'info');
+        return $this->redirect(['action' => 'dashboard']);
+    }
+
+    public function returntoschool() {
+        $this->request->allowMethod(['post']);
+        $session = $this->request->getSession();
+        $access = $session->read('school_student_access');
+        if (!is_array($access) || $session->read('user_type') !== 'Student'
+            || (int)$session->read('user_id') !== (int)($access['student_id'] ?? 0)) {
+            throw new \Cake\Http\Exception\ForbiddenException('No school student-view session is active.');
+        }
+        $school = $this->Users->find()->where([
+            'Users.id' => (int)($access['school_id'] ?? 0), 'Users.user_type' => 'School',
+            'Users.status' => 1, 'Users.activation_status' => 1,
+        ])->first();
+        if (!$school) {
+            $this->Flash->error('Your school account is no longer active. Please sign in again.');
+            return $this->logout();
+        }
+        $session->renew();
+        $session->write('user_id', (int)$school->id);
+        $session->write('user_type', 'School');
+        $session->write('email_address', $school->email_address);
+        foreach (['sess_selected_convention_registration_id', 'sess_selected_convention_id', 'current_session_profile_type', 'last_login', 'returnUrl'] as $key) {
+            $session->delete($key);
+            if (isset($access['context'][$key])) {
+                $session->write($key, $access['context'][$key]);
+            }
+        }
+        $session->delete('school_student_access');
+        $session->delete('student_portal_version');
+        $this->log('School student portal closed: school ' . (int)$school->id . ', student ' . (int)$access['student_id'], 'info');
+        $this->Flash->success('Returned to your school account.');
+        return $this->redirect(['action' => 'students']);
+    }
+
+    public function bulkstudentaccess() {
+        $this->request->allowMethod(['post']);
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $school = $this->crossSchoolAccount();
+        $mode = $this->request->getData('mode');
+        if (!in_array($mode, ['selected', 'without_password'], true)) {
+            throw new \Cake\Http\Exception\BadRequestException('Choose a valid bulk setup option.');
+        }
+        $ids = [];
+        if ($mode === 'selected') {
+            $selected = $this->request->getData('student_ids', []);
+            if (!is_array($selected)) {
+                throw new \Cake\Http\Exception\BadRequestException('Invalid student selection.');
+            }
+            foreach ($selected as $id) {
+                if (!is_scalar($id) || !ctype_digit((string)$id) || (int)$id <= 0) {
+                    throw new \Cake\Http\Exception\BadRequestException('Invalid student selection.');
+                }
+                $ids[] = (int)$id;
+            }
+        }
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Bulk Student Setup Codes ' . TITLE_FOR_PAGES);
+        $this->set('active_students', 'active');
+        $this->set('userDetails', $school);
+        $this->set('mode', $mode);
+        $this->response = $this->response->withHeader('Cache-Control', 'private, no-store, max-age=0')
+            ->withHeader('Referrer-Policy', 'no-referrer');
+        try {
+            $portal = new \App\Service\StudentPortalAccounts($this->Users->getConnection());
+            if ($this->request->getData('confirm_issue') === '1') {
+                $this->set('issued', $portal->issueBulk((int)$school->id, $ids, $mode === 'without_password'));
+            } else {
+                $this->set('students', $portal->bulkStudents((int)$school->id, $ids, $mode === 'without_password'));
+            }
+        } catch (\DomainException $error) {
+            $this->Flash->error($error->getMessage());
+            return $this->redirect(['action' => 'students']);
+        } catch (\Exception $error) {
+            $this->log('Bulk student code issuance failed for school ' . (int)$school->id . ': ' . $error->getMessage(), 'error');
+            $this->Flash->error('Bulk setup is unavailable. No code changes were saved. Please contact the events team.');
+            return $this->redirect(['action' => 'students']);
+        }
+    }
+
+    public function studentaccess($slug = null) {
+        $this->request->allowMethod(['get', 'post']);
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $schoolId = (int)$this->request->getSession()->read('user_id');
+        if ($this->request->getSession()->read('user_type') !== 'School') {
+            throw new \Cake\Http\Exception\ForbiddenException('Only the student\'s school can issue setup codes.');
+        }
+        $student = $this->Users->find()->where([
+            'Users.slug' => $slug, 'Users.school_id' => $schoolId, 'Users.user_type' => 'Student',
+        ])->first();
+        if (!$student) {
+            throw new \Cake\Http\Exception\NotFoundException('Student not found in your school Global Students List.');
+        }
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Student Portal Access ' . TITLE_FOR_PAGES);
+        $this->set('active_students', 'active');
+        $this->set('userDetails', $this->Users->get($schoolId));
+        $this->set('student', $student);
+        $this->response = $this->response->withHeader('Cache-Control', 'no-store')->withHeader('Referrer-Policy', 'no-referrer');
+        $portal = new \App\Service\StudentPortalAccounts($this->Users->getConnection());
+        $this->set('access', $portal->account((int)$student->id));
+        if ($this->request->is('post')) {
+            if ($this->request->getData('confirm_issue') !== '1') {
+                $this->Flash->error('Confirm that you want to issue a new single-use code.');
+                return;
+            }
+            try {
+                $this->set('issued', $portal->issue((int)$student->id, $schoolId));
+                $this->set('access', $portal->account((int)$student->id));
+            } catch (\DomainException $error) {
+                $this->Flash->error($error->getMessage());
+            } catch (\Exception $error) {
+                $this->log('Student setup code issuance failed for student ' . (int)$student->id . ': ' . $error->getMessage(), 'error');
+                $this->Flash->error('A code could not be issued. Please contact the events team.');
+            }
+        }
+    }
+
     public function registration($conventionregistration_slug=null) {
         
         $this->viewBuilder()->setLayout("home");		
@@ -342,177 +552,425 @@ class UsersController extends AppController {
     }
     
     public function forgotpassword() {
-        
-        $this->viewBuilder()->setLayout("home");		
-        $this->set('title_for_layout', 'Forgot Password '.TITLE_FOR_PAGES);
-        
-        global $loginUserTypes;
-        $this->set('loginUserTypes', $loginUserTypes);
-        
-        if ($this->request->is('post'))
-        {			
-            $captchaValid=1;
-            
-            //$captchaValid=1;
-            if ($captchaValid)
-            {
-                $email_address			= $this->request->getData()['Users']['email_address'];
-                $user_type				= $this->request->getData()['Users']['user_type'];
-                
-                // Step 1 :: To check in users table
-                $userInfo = $this->Users->find()->where(['Users.email_address' => $email_address,'Users.user_type' => $user_type])->first();
-                
-                //$this->prx($userInfo);
-                
-                if ($userInfo)
-                {
-                    if ($userInfo->activation_status == 0) {
-                        $this->Flash->error('Your account has not yet verified.');
+        $this->request->allowMethod(['get', 'post']);
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store')->withHeader('Referrer-Policy', 'no-referrer'));
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Forgot Password ' . TITLE_FOR_PAGES);
+        $this->set('loginUserTypes', ['School' => 'School', 'Teacher_Parent' => 'Supervisor', 'Judge' => 'Judge']);
+        $this->set('users', $this->Users->newEmptyEntity());
+        if (!$this->request->is('post')) {
+            return;
+        }
+        $service = new \App\Service\PasswordReset($this->Users->getConnection());
+        try {
+            $config = $service->configuration();
+        } catch (\RuntimeException $error) {
+            \Cake\Log\Log::error('Password reset unavailable: ' . $error->getMessage() . ' Deployment: ' . json_encode([
+                'environment' => \App\Deployment\Environment::settings()['environment'],
+                'configFile' => getenv('ACP_CONFIG_FILE') ?: '(not set)',
+                'resetMailEnabled' => (\App\Deployment\Environment::settings()['passwordResetMail']['enabled'] ?? false) === true,
+            ], JSON_UNESCAPED_SLASHES));
+            $this->Flash->error('Password reset email is not configured. Please contact the events team.');
+            return $this->redirect(['action' => 'forgotpassword']);
+        }
+        $email = trim((string)$this->request->getData('Users.email_address'));
+        $type = (string)$this->request->getData('Users.user_type');
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false || !in_array($type, ['School', 'Teacher_Parent', 'Judge'], true)) {
+            $this->Flash->error('Enter a valid email address and choose an account type.');
+            return $this->redirect(['action' => 'forgotpassword']);
+        }
+        if (!$service->recipientAllowed($config, $email)) {
+            $this->Flash->error('Local password reset is restricted to approved test mailboxes.');
+            return $this->redirect(['action' => 'forgotpassword']);
+        }
+        $ip = (string)($this->request->getServerParams()['REMOTE_ADDR'] ?? '');
+        if ($ip === '' || !$service->allowRequest($ip)) {
+            $this->Flash->error('Too many requests or unable to verify the connection. Please try again later.');
+            return $this->redirect(['action' => 'forgotpassword']);
+        }
+        $accounts = $this->Users->find()->where([
+            'Users.email_address' => $email, 'Users.user_type' => $type,
+            'Users.status' => 1, 'Users.activation_status' => 1,
+        ])->contain(['Schools'])->orderBy(['Users.id' => 'ASC'])->all()->toList();
+        if ($accounts) {
+            $issued = [];
+            $links = [];
+            try {
+                $this->Users->getConnection()->transactional(function () use ($accounts, $service, &$issued, &$links) {
+                    foreach ($accounts as $account) {
+                        $token = $service->issue((int)$account->id, (string)$account->email_address);
+                        if ($token === null) {
+                            continue;
+                        }
+                        $issued[(int)$account->id] = $token;
+                        $name = trim($account->first_name . ' ' . $account->last_name);
+                        $schoolName = $account->Schools ? trim((string)$account->Schools->first_name) : '';
+                        $label = $name . ' - Account #' . (int)$account->id;
+                        if ($schoolName !== '') {
+                            $label .= ' - ' . $schoolName;
+                        }
+                        $links[] = [
+                            'label' => $label,
+                            'url' => rtrim(HTTP_PATH, '/') . '/users/resetpassword#' . $token,
+                        ];
                     }
-                    elseif ($userInfo->status == 0) {
-                        $this->Flash->error('Your account got temporary disabled.');
+                });
+            } catch (\RuntimeException $error) {
+                \Cake\Log\Log::error('Password reset token could not be issued.');
+                $this->Flash->error('Password reset is unavailable. Please try again later or contact the events team.');
+                return $this->redirect(['action' => 'forgotpassword']);
+            }
+            if ($issued) {
+                $localTest = \App\Deployment\Environment::settings()['environment'] === 'local';
+                try {
+                    $service->send($config, (string)$accounts[0]->email_address, ($localTest ? '[LOCAL TEST] ' : '') . 'Reset your convention portal password',
+                        [
+                            'recipientName' => count($accounts) === 1
+                                ? trim($accounts[0]->first_name . ' ' . $accounts[0]->last_name)
+                                : 'convention portal account holder',
+                            'links' => $links,
+                        ]);
+                } catch (\Exception $error) {
+                    foreach ($issued as $id => $issuedToken) {
+                        $service->revoke($id, $issuedToken);
                     }
-                    elseif ($userInfo) {
-                        
-                        // update forgot password status
-                        $this->Users->updateAll(['forgot_password_status' => 1], ['id' => $userInfo->id]);
-                        
-                        $emailId = $userInfo['email_address'];
-                        
-                        $emailtemplateMessage = $this->Emailtemplates->find()->where(['Emailtemplates.id' => '3'])->first();
-                        
-                        $reset_password_link = HTTP_PATH."/users/resetpassword/".$userInfo->email_address."/".md5($userInfo->email_address)."/".$userInfo->id."/".md5($userInfo->id);
-
-                        $toRepArray = array('[!SITE_TITLE!]','[!first_name!]','[!email_address!]','[!reset_password_link!]');
-                        $fromRepArray = array(SITE_TITLE,$userInfo->first_name,$userInfo->email_address,$reset_password_link);
-
-                        $subjectToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['subject']);
-                        $messageToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['template']);
-                        
-                        //echo $messageToSend; exit;
-                        
-                        $email = new Email();
-                        $email->viewBuilder()
-                            ->setTemplate('default')
-                            ->setLayout('admintemplate')
-                            ->setVars(['content_for_layout' => $messageToSend]);
-                        $email->setEmailFormat('html')
-                            ->setTo($emailId)
-                            ->setCc(ACCOUNTS_TEAM_ANOTHER_EMAIL)
-                            ->setFrom([HEADERS_FROM_EMAIL => HEADERS_FROM_NAME])
-                            ->setSubject($subjectToSend)
-                            ->send();
-
-                        $this->Flash->success('We have successfully sent you reset password link. Please click that link and reset your password.');
-                        $this->redirect(['controller' => 'users', 'action' => 'login']);
-                        
-                        
-                    } else {
-                        $this->Flash->error('Invalid email entered.');
-                    }
+                    \Cake\Log\Log::error('Password reset email delivery failed.');
+                    $this->Flash->error('Password reset email delivery is unavailable. Please try again later or contact the events team.');
+                    return $this->redirect(['action' => 'forgotpassword']);
                 }
-                
-                // if not found anywhere
-                if(!$userInfo)
-                {
-                    $this->Flash->error('Invalid email. Account not found in system.');
+                try {
+                    $service->send($config, $config['notify'], ($localTest ? '[LOCAL TEST] ' : '') . 'Convention portal password reset requested',
+                        [
+                            'notification' => true,
+                            'accountType' => $type,
+                            'accountEmail' => (string)$accounts[0]->email_address,
+                            'accountIds' => array_keys($issued),
+                        ]);
+                } catch (\Exception $error) {
+                    \Cake\Log\Log::error('Password reset administrator notification delivery failed.');
+                    $this->Flash->error('The reset request was processed, but the events-team notification could not be sent.');
+                    return $this->redirect(['action' => 'forgotpassword']);
                 }
-                
-            }			
-            
-            //$this->Flash->error('Invalid email or password.');
-            
-        } //end if ($this->request->is('post'))
-        
+            }
+        }
+        $this->Flash->success('If an eligible account matches, a reset link will be sent. Please check your inbox and spam folder.');
+        return $this->redirect(['action' => 'login']);
     }
     
-    public function resetpassword($email_address = NULL, $enc_email = NULL, $userID = NULL, $enc_userID = NULL) {
-        
-        $this->viewBuilder()->setLayout("home");		
-        $this->set('title_for_layout', 'Reset Password '.TITLE_FOR_PAGES);
-
-        if(md5($email_address) != $enc_email)		
-        {
-            $this->Flash->error('Invalid link.');
-            $this->redirect(['controller' => 'users', 'action' => 'login']);
+    public function resetpassword(...$legacy) {
+        $this->request->allowMethod(['get', 'post']);
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store')->withHeader('Referrer-Policy', 'no-referrer'));
+        if ($legacy) {
+            $this->Flash->error('This old reset link is no longer valid. Please request a new link.');
+            return $this->redirect(['action' => 'login']);
         }
-        
-        if(md5($userID) != $enc_userID)		
-        {
-            $this->Flash->error('Invalid reset password link.');
-            $this->redirect(['controller' => 'users', 'action' => 'login']);
-        }
-        
-        $userInfo = $this->Users->find()->where(['Users.id' => $userID, 'Users.email_address' => $email_address])->first();
-        
-        if($userInfo->forgot_password_status != 1)		
-        {
-            $this->Flash->error('Invalid link.');
-            $this->redirect(['controller' => 'users', 'action' => 'login']);
-        }
-        
-        if ($this->request->is('post'))
-        {
-            if($userInfo)
-            {
-                $new_password = $this->request->getData('Users.password');
-                $salt = uniqid(mt_rand(), true);
-                $password = crypt($new_password, '$2a$07$' . $salt . '$');				
-                
-                $this->Users->updateAll(['password' => $password,'forgot_password_status' => '0'], ['id' => $userID]);
-                $this->Flash->success('Your password reset successfully. Please login.');
-                $this->redirect(['controller' => 'users', 'action' => 'login']);
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Reset Password ' . TITLE_FOR_PAGES);
+        $this->set('users', $this->Users->newEmptyEntity());
+        if ($this->request->is('post')) {
+            $password = (string)$this->request->getData('Users.password');
+            if ($password !== (string)$this->request->getData('Users.confirm_password')) {
+                $this->Flash->error('The passwords do not match. Open your reset link again.');
+                return $this->redirect(['action' => 'forgotpassword']);
             }
-            else
-            {
-                $this->Flash->error('Invalid request.');
-                $this->redirect(['controller' => 'users', 'action' => 'login']);
+            try {
+                (new \App\Service\PasswordReset($this->Users->getConnection()))->consume(
+                    (string)$this->request->getData('token'), $password
+                );
+            } catch (\DomainException $error) {
+                $this->Flash->error($error->getMessage() . ' Please request a new link.');
+                return $this->redirect(['action' => 'forgotpassword']);
+            } catch (\RuntimeException $error) {
+                \Cake\Log\Log::error('Password reset completion failed.');
+                $this->Flash->error('Password reset could not be completed. Please request a new link.');
+                return $this->redirect(['action' => 'forgotpassword']);
             }
+            $this->Flash->success('Your password has been reset. Please log in.');
+            return $this->redirect(['action' => 'login']);
         }
     }
     
     public function teachersetpassword($email_address = NULL, $enc_email = NULL, $userID = NULL, $enc_userID = NULL) {
-        
-        $this->viewBuilder()->setLayout("home");		
-        $this->set('title_for_layout', 'Teacher Set Password '.TITLE_FOR_PAGES);
-
-        if(md5($email_address) != $enc_email)		
-        {
-            $this->Flash->error('Invalid link.');
-            $this->redirect(['controller' => 'users', 'action' => 'login']);
-        }
-        
-        if(md5($userID) != $enc_userID)		
-        {
-            $this->Flash->error('Invalid reset password link.');
-            $this->redirect(['controller' => 'users', 'action' => 'login']);
-        }
-        
-        $userInfo = $this->Users->find()->where(['Users.id' => $userID, 'Users.email_address' => $email_address])->first();
-        
-        if ($this->request->is('post'))
-        {
-            if($userInfo)
-            {
-                $new_password = $this->request->getData('Users.password');
-                $salt = uniqid(mt_rand(), true);
-                $password = crypt($new_password, '$2a$07$' . $salt . '$');				
-                
-                $this->Users->updateAll(['password' => $password,'forgot_password_status' => '0'], ['id' => $userID]);
-                $this->Flash->success('Your password reset successfully. Please login.');
-                $this->redirect(['controller' => 'users', 'action' => 'login']);
-            }
-            else
-            {
-                $this->Flash->error('Invalid request.');
-                $this->redirect(['controller' => 'users', 'action' => 'login']);
-            }
-        }
-        
+        $this->Flash->error('Supervisor account setup is temporarily unavailable. Please contact the events team.');
+        return $this->redirect(['controller' => 'users', 'action' => 'login']);
     }
-    
+
+    private function crossSchoolAccount()
+    {
+        $user = $this->Users->find()->where([
+            'Users.id' => (int)$this->request->getSession()->read('user_id'),
+            'Users.user_type' => 'School',
+            'Users.status' => 1,
+            'Users.activation_status' => 1,
+        ])->first();
+        if (!$user || $this->request->getSession()->read('user_type') !== 'School') {
+            throw new \Cake\Http\Exception\ForbiddenException('Active school access required.');
+        }
+        return $user;
+    }
+
+    public function crossschoolrequests()
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $this->request->allowMethod(['get']);
+        $school = $this->crossSchoolAccount();
+        $connection = $this->Conventionregistrationstudents->getConnection();
+        $available = (new \App\Service\CrossSchoolSponsorship($connection))->available();
+        $requests = [];
+        if ($available) {
+            $requests = $connection->execute(
+                "SELECT r.id, r.origin_school_id, r.sponsor_school_id, r.created,
+                        student.first_name AS student_first, student.last_name AS student_last,
+                        origin.first_name AS origin_name, sponsor.first_name AS sponsor_name,
+                        supervisor.first_name AS supervisor_first, supervisor.last_name AS supervisor_last,
+                        cr.season_year, conv.name AS convention_name,
+                        CASE WHEN cr.status = 1 AND s.status = 1 AND s.teacher_parent_id IS NULL
+                                  AND s.user_id = r.origin_school_id
+                                  AND student.school_id = r.origin_school_id AND student.user_type = 'Student'
+                                  AND sponsor.user_type = 'School'
+                                  AND sponsor.status = 1 AND sponsor.activation_status = 1
+                                  AND supervisor.user_type = 'Teacher_Parent'
+                                  AND supervisor.school_id = r.sponsor_school_id
+                                  AND supervisor.status = 1 AND supervisor.activation_status = 1
+                                  AND EXISTS (
+                                      SELECT 1 FROM conventionregistrationteachers t
+                                      JOIN conventionregistrations target ON target.id = t.conventionregistration_id
+                                      WHERE t.teacher_id = r.supervisor_id AND t.user_id = r.sponsor_school_id
+                                        AND t.status = 1 AND target.user_id = r.sponsor_school_id
+                                        AND target.convention_id = cr.convention_id AND target.season_id = cr.season_id
+                                        AND target.season_year = cr.season_year AND target.status = 1
+                                  ) THEN 1 ELSE 0 END AS sponsor_available
+                 FROM cross_school_sponsorship_requests r
+                 JOIN conventionregistrationstudents s ON s.id = r.student_registration_id
+                 LEFT JOIN conventionregistrations cr ON cr.id = s.conventionregistration_id AND cr.user_id = r.origin_school_id
+                 LEFT JOIN conventions conv ON conv.id = cr.convention_id
+                 LEFT JOIN users student ON student.id = s.student_id
+                 LEFT JOIN users origin ON origin.id = r.origin_school_id
+                 LEFT JOIN users sponsor ON sponsor.id = r.sponsor_school_id
+                 LEFT JOIN users supervisor ON supervisor.id = r.supervisor_id
+                 WHERE (r.origin_school_id = ? OR r.sponsor_school_id = ?)
+                   AND r.status = 'pending_school'
+                 ORDER BY r.created DESC, r.id DESC",
+                [$school->id, $school->id]
+            )->fetchAll('assoc');
+        }
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Sponsorship Requests ' . TITLE_FOR_PAGES);
+        $this->set('active_cross_school_requests', 'active');
+        $this->set(compact('school', 'available', 'requests'));
+        $this->set('userDetails', $school);
+    }
+
+    public function cancelcrossschoolrequest($id = null)
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $this->request->allowMethod(['post']);
+        $school = $this->crossSchoolAccount();
+        $connection = $this->Conventionregistrationstudents->getConnection();
+        if (!(new \App\Service\CrossSchoolSponsorship($connection))->available()) {
+            $this->Flash->error('Cross-school requests are unavailable. Please contact the events team.');
+            return $this->redirect(['action' => 'crossschoolrequests']);
+        }
+        $updated = $connection->transactional(function () use ($connection, $id, $school) {
+            $updated = $connection->execute(
+                "UPDATE cross_school_sponsorship_requests SET status = 'cancelled'
+                 WHERE id = ? AND origin_school_id = ? AND status = 'pending_school'",
+                [(int)$id, $school->id]
+            )->rowCount();
+            if ($updated) {
+                (new \App\Service\SchoolNotifications($connection))->sponsorship((int)$id, true);
+            }
+            return $updated;
+        });
+        if ($updated) {
+            $this->Flash->success('The request was cancelled. Please check the student has an appropriate assigned supervisor.');
+        } else {
+            $this->Flash->error('The pending request could not be found.');
+        }
+        return $this->redirect(['action' => 'crossschoolrequests']);
+    }
+
+    private function notificationAccount()
+    {
+        $type = (string)$this->request->getSession()->read('user_type');
+        if (!in_array($type, ['School', 'Teacher_Parent', 'Judge', 'Student'], true)) {
+            throw new \Cake\Http\Exception\ForbiddenException('Portal account required.');
+        }
+        $user = $this->Users->find()->where([
+            'Users.id' => (int)$this->request->getSession()->read('user_id'),
+            'Users.user_type' => $type,
+            'Users.status' => 1,
+            'Users.activation_status' => 1,
+        ])->first();
+        if (!$user) {
+            throw new \Cake\Http\Exception\ForbiddenException('An active verified portal account is required.');
+        }
+        return $user;
+    }
+
+    private function portalNotificationInbox()
+    {
+        $this->request->allowMethod(['get']);
+        $school = $this->notificationAccount();
+        $isSchool = $school->user_type === 'School';
+        $service = new \App\Service\SchoolNotifications($this->Users->getConnection());
+        $available = $service->available();
+        $folder = $this->request->getQuery('folder', 'inbox');
+        if (!is_string($folder) || !in_array($folder, ['inbox', 'unread', 'archive'], true)) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid notification folder.');
+        }
+        $pageValue = $this->request->getQuery('page', '1');
+        $messageValue = $this->request->getQuery('message');
+        if (!is_scalar($pageValue) || !ctype_digit((string)$pageValue)
+            || ($messageValue !== null && (!is_scalar($messageValue) || !ctype_digit((string)$messageValue)))) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid notification page or message.');
+        }
+        $inbox = $available ? $service->inbox((int)$school->id, $folder, (int)$pageValue) : null;
+        $message = $available && $messageValue !== null ? $service->message((int)$school->id, (int)$messageValue) : null;
+        $notificationInvoice = $message && in_array($school->user_type, ['School', 'Judge'], true)
+            ? (new \App\Service\TransactionInvoices($this->Users->getConnection()))->forSchoolNotification((int)$school->id, $message)
+            : null;
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        $this->viewBuilder()->setLayout('home')->setTemplate('school_notifications');
+        $this->set('title_for_layout', 'Notifications ' . TITLE_FOR_PAGES);
+        $this->set('active_notifications', 'active');
+        $this->set('userDetails', $school);
+        $this->set(compact('available', 'folder', 'inbox', 'message', 'notificationInvoice', 'isSchool'));
+        if ($school->user_type === 'Teacher_Parent') {
+            $agreements = new \App\Service\SupervisorAgreements($this->Users->getConnection());
+            $agreementsAvailable = $available && $agreements->available();
+            $supervisorAgreements = $agreementsAvailable ? $agreements->forSupervisor((int)$school->id) : [];
+            $notificationAgreement = null;
+            if ($message && $message['kind'] === 'supervisor_agreement') {
+                foreach ($supervisorAgreements as $agreement) {
+                    if ($message['event_key'] === 'supervisor-agreement:' . $agreement['id']) {
+                        $notificationAgreement = $agreement;
+                        break;
+                    }
+                }
+            }
+            $this->set(compact('agreementsAvailable', 'supervisorAgreements', 'notificationAgreement'));
+        }
+        return null;
+    }
+
+    public function acceptsupervisoragreement($id = null)
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $this->request->allowMethod(['post']);
+        $account = $this->notificationAccount();
+        if ($account->user_type !== 'Teacher_Parent' || $this->request->getSession()->read('school_student_access') !== null) {
+            throw new \Cake\Http\Exception\ForbiddenException('Sign in to your own supervisor account to accept this agreement.');
+        }
+        if (!is_string($id) || !ctype_digit($id) || (int)$id <= 0) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid supervisor agreement.');
+        }
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        $hash = $this->request->getData('roster_hash');
+        if ($this->request->getData('agree') !== '1' || !is_string($hash) || !preg_match('/^[a-f0-9]{64}$/D', $hash)) {
+            $this->Flash->error('Tick the supervisor agreement after reviewing your assigned students and all declarations.');
+            return $this->redirect(['action' => 'notifications'], 303);
+        }
+        try {
+            (new \App\Service\SupervisorAgreements($this->Users->getConnection()))->accept((int)$account->id, (int)$id, $hash);
+        } catch (\DomainException $error) {
+            $this->Flash->error($error->getMessage());
+            return $this->redirect(['action' => 'notifications'], 303);
+        }
+        $this->Flash->success('Your supervisor agreement has been signed with your first and last name. You can now continue for this convention.');
+        return $this->redirect(['action' => 'notifications'], 303);
+    }
+
+    public function notificationinvoice($id = null)
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $this->request->allowMethod(['get']);
+        $school = $this->notificationAccount();
+        if (!in_array($school->user_type, ['School', 'Judge'], true)) {
+            throw new \Cake\Http\Exception\ForbiddenException('A school or judge billing account is required.');
+        }
+        if (!is_string($id) || !ctype_digit($id)) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid notification.');
+        }
+        $db = $this->Users->getConnection();
+        $message = (new \App\Service\SchoolNotifications($db))->message((int)$school->id, (int)$id);
+        $service = new \App\Service\TransactionInvoices($db);
+        $invoice = $service->forSchoolNotification((int)$school->id, $message);
+        if (!$invoice) {
+            throw new \Cake\Http\Exception\NotFoundException('Invoice unavailable.');
+        }
+        $response = $this->getResponse()->withType('pdf')
+            ->withHeader('Cache-Control', 'private, no-store, max-age=0')
+            ->withHeader('X-Content-Type-Options', 'nosniff')
+            ->withStringBody($service->pdf($invoice, $invoice['paid']));
+        if ($this->request->getQuery('download') === '1') {
+            return $response->withDownload($invoice['number'] . '.pdf');
+        }
+        return $response->withHeader('Content-Disposition', 'inline; filename="' . $invoice['number'] . '.pdf"');
+    }
+
+    public function notificationaction($id = null, $action = null, $destination = null)
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $this->request->allowMethod(['post']);
+        $school = $this->notificationAccount();
+        if (!is_string($id) || !ctype_digit($id) || !in_array($action, ['read', 'unread', 'archive', 'restore'], true)
+            || !in_array($destination, [null, 'open'], true)) {
+            throw new \Cake\Http\Exception\BadRequestException('Invalid notification action.');
+        }
+        $service = new \App\Service\SchoolNotifications($this->Users->getConnection());
+        if (!$service->available()) {
+            $this->Flash->error('Notifications are unavailable until migration 012 is applied. Please contact the events team.');
+            return $this->redirect(['action' => 'notifications']);
+        }
+        $message = $service->message((int)$school->id, (int)$id);
+        $service->update((int)$school->id, (int)$id, $action);
+        $folder = $action === 'restore' ? 'archive' : ($message['archived_at'] ? 'archive' : 'inbox');
+        $query = ['folder' => $folder];
+        if ($destination === 'open' && $action === 'read') {
+            $query['message'] = (int)$id;
+        } else {
+            $this->Flash->success(match ($action) {
+                'read' => 'Message marked as read.',
+                'unread' => 'Message marked as unread.',
+                'archive' => 'Message archived.',
+                'restore' => 'Message moved to your inbox.',
+            });
+        }
+        return $this->redirect(['action' => 'notifications', '?' => $query]);
+    }
+
+    public function notifications()
+    {
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        return $this->portalNotificationInbox();
+    }
+
     public function dashboard() {
         //echo 'ddd';exit;
+        if (!$this->request->getSession()->read("user_id")) {
+            $this->request->getSession()->write("returnUrl", $this->request->getRequestTarget());
+            return $this->redirect(['controller' => 'users', 'action' => 'login']);
+        }
         $this->userLoginCheck();
         
         $user_id 	= $this->request->getSession()->read("user_id");
@@ -523,6 +981,16 @@ class UsersController extends AppController {
         $this->set('title_for_layout', 'Dashboard '.TITLE_FOR_PAGES);
         
         $this->set('active_dashboard', 'active');
+        if ($user_type === 'Teacher_Parent') {
+            $account = $this->notificationAccount();
+            $notifications = new \App\Service\SchoolNotifications($this->Users->getConnection());
+            if ($notifications->available()) {
+                $this->set('unreadNotificationCount', $notifications->unreadCount((int)$account->id));
+            } else {
+                $this->Flash->error('Notifications are unavailable until migration 012 is applied. Please contact the events team.');
+            }
+            $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        }
         
         $userDetails = null;
         if (!empty($user_id)) {
@@ -801,6 +1269,7 @@ class UsersController extends AppController {
         $this->set('userDetails', $student);
 
         $eventRows = [];
+        $pendingEventSelections = [];
         if ($student) {
             $currentSeasonId = $this->getCurrentSeason();
             $schoolId = (int)($student->school_id ?? 0);
@@ -828,14 +1297,27 @@ class UsersController extends AppController {
                 ->contain(['Events', 'Conventions'])
                 ->order(['Crstudentevents.id' => 'DESC'])
                 ->all();
+            $reviewSql = "SELECT s.slug,s.season_year,v.event_ids FROM student_event_reviews v
+                JOIN conventionregistrationstudents s ON s.id = v.student_registration_id
+                WHERE s.student_id = ? AND s.user_id = ? AND v.status = 'pending'";
+            $reviewArgs = [$userId, $schoolId];
+            if ($conventionReg) {
+                $reviewSql .= ' AND s.conventionregistration_id = ?';
+                $reviewArgs[] = (int)$conventionReg->id;
+            }
+            $pendingEventSelections = $this->Users->getConnection()->execute($reviewSql, $reviewArgs)->fetchAll('assoc');
         }
 
         $this->set('eventRows', $eventRows);
+        $this->set('pendingEventSelections', $pendingEventSelections);
     }
     
     public function editprofile() {
         
-        $this->userLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
         $this->multiLoginCheck(['School','Teacher_Parent','Student']);
         
         //echo ' fsdf sdf sdf d';exit;
@@ -859,7 +1341,24 @@ class UsersController extends AppController {
         $users = $this->Users->get($user_id);
 
         if ($this->request->is(['post', 'put'])) {
-            $data = $this->Users->patchEntity($users, $this->request->getData());
+            $input = $this->request->getData();
+            if (in_array($users->user_type, ['School', 'Teacher_Parent', 'Student'], true)) {
+                $fields = $users->user_type === 'School'
+                    ? ['first_name', 'middle_name', 'phone', 'phone2', 'bill_to_street', 'bill_to_block', 'bill_to_city', 'bill_to_zip', 'bill_to_country']
+                    : ($users->user_type === 'Student' ? ['first_name', 'middle_name', 'last_name', 'email_address']
+                    : ['first_name', 'last_name', 'is_sponsoring_students', 'first_aid_officer', 'volunteer_judge_and_sponsor',
+                        'scripture_award_application', 'ace_experience_years', 'ace_experience_months']);
+                $supplied = is_array($input['Users'] ?? null) ? $input['Users'] : $input;
+                $protected = ['email_address', 'password', 'user_type', 'school_id', 'status', 'activation_status', 'customer_code', 'forgot_password_status'];
+                if ($users->user_type === 'Student') {
+                    $protected = ['password', 'user_type', 'school_id', 'status', 'activation_status', 'customer_code', 'forgot_password_status'];
+                }
+                if (array_intersect($protected, array_keys($supplied))) {
+                    throw new \Cake\Http\Exception\BadRequestException('Account credentials and identity cannot be changed through this form.');
+                }
+                $input = array_intersect_key($supplied, array_flip($fields));
+            }
+            $data = $this->Users->patchEntity($users, $input);
             
             if (count($data->getErrors()) == 0) {
                 
@@ -870,13 +1369,19 @@ class UsersController extends AppController {
             }
         }
         $this->set('users', $users);
+        if ($users->user_type === 'Student') {
+            $this->set('studentPortalAccess', (new \App\Service\StudentPortalAccounts($this->Users->getConnection()))->account((int)$users->id));
+        }
         //pr($users);exit;
         
     }
     
     public function changepassword() {
         
-        $this->userLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
         $this->multiLoginCheck(['School','Teacher_Parent','Judge','Student']);
         
         $this->set("title_for_layout", "Change Password" . TITLE_FOR_PAGES);
@@ -897,7 +1402,30 @@ class UsersController extends AppController {
         $users = $this->Users->newEntity([]);
 
         if ($this->request->is('post')) {
-            //die;
+            if ($userDetails && $userDetails->user_type === 'Student') {
+                $input = (array)$this->request->getData('Users');
+                foreach (['old_password', 'new_password', 'confirm_password'] as $key) {
+                    if (!is_string($input[$key] ?? null)) {
+                        throw new \Cake\Http\Exception\BadRequestException('Complete all password fields.');
+                    }
+                }
+                try {
+                    $version = (new \App\Service\StudentPortalAccounts($this->Users->getConnection()))->changePassword(
+                        (int)$user_id, $input['old_password'], $input['new_password'], $input['confirm_password']
+                    );
+                    $this->request->getSession()->renew();
+                    $this->request->getSession()->write('student_portal_version', $version);
+                    $this->Flash->success('Your password has been changed successfully.');
+                    return $this->redirect(['action' => 'editprofile']);
+                } catch (\DomainException $error) {
+                    $this->Flash->error($error->getMessage());
+                } catch (\Exception $error) {
+                    $this->log('Student password change failed: ' . $error->getMessage(), 'error');
+                    $this->Flash->error('Password could not be changed. Please contact the events team.');
+                }
+                $this->set('users', $users);
+                return;
+            }
             $data = $this->Users->patchEntity($users, $this->request->getData(), ['validate' => 'changePassword']);
 
             if (count($data->getErrors()) == 0) {
@@ -1005,26 +1533,26 @@ class UsersController extends AppController {
             return $this->redirect(['controller' => 'users', 'action' => 'login']);
         }
         
-        // Use a closure to build the query with CakePHP 4 syntax
-        $this->paginate = [
-            'limit' => 30,
-            'order' => ['Users.id' => 'DESC']
-        ];
-        
-        $query = $this->Users->find()
-            ->where([
+        $groups = [];
+        foreach (['active' => 1, 'archive' => 2, 'inactive' => 0] as $group => $status) {
+            $query = $this->Users->find()->where([
                 'Users.school_id' => $user_id,
-                'Users.user_type' => 'Teacher_Parent'
+                'Users.user_type' => 'Teacher_Parent',
+                'Users.status' => $status,
             ]);
-        
-        // Add keyword search if provided
-        if (!empty($keyword)) {
-            $query = $query->where(function ($exp, $q) use ($keyword) {
-                return $exp->like('Users.name', '%' . $keyword . '%');
-            });
+            if (!empty($keyword)) {
+                $query = $query->where(function ($exp, $q) use ($keyword) {
+                    return $exp->like('Users.name', '%' . $keyword . '%');
+                });
+            }
+            $groups[$group] = $this->paginate($query, [
+                'scope' => $group,
+                'limit' => 30,
+                'order' => ['Users.id' => 'DESC'],
+                'allowedParameters' => ['page'],
+            ]);
         }
-        
-        $this->set('users', $this->paginate($query));
+        $this->set('supervisorGroups', $groups);
         if (strtolower($this->request->getHeaderLine('X-Requested-With')) === 'xmlhttprequest') {
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Users');
@@ -1034,8 +1562,11 @@ class UsersController extends AppController {
     
     public function editteacher($teacher_slug=null) {
         
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        $school = $this->crossSchoolAccount();
         
         //echo ' fsdf sdf sdf d';exit;
         $this->viewBuilder()->setLayout("home");
@@ -1043,7 +1574,7 @@ class UsersController extends AppController {
         
         $this->set('active_teachers','active');
         
-        $user_id = $this->request->getSession()->read("user_id");
+        $user_id = $school->id;
         $userDetails = $this->Users->find()->where(['Users.id' => $user_id])->first();
         $this->set('userDetails', $userDetails);
         
@@ -1054,12 +1585,24 @@ class UsersController extends AppController {
         $this->set('yesNoDD', $yesNoDD);
         
         // to get teacher details
-        $teacherD = $this->Users->find()->where(['Users.school_id' => $user_id,'Users.slug' => $teacher_slug])->first();
+        $teacherD = $this->Users->find()->where(['Users.school_id' => $user_id, 'Users.slug' => $teacher_slug, 'Users.user_type' => 'Teacher_Parent'])->first();
+        if (!$teacherD) {
+            throw new \Cake\Http\Exception\NotFoundException('Supervisor not found.');
+        }
         
         $users = $this->Users->get($teacherD->id);
 
         if ($this->request->is(['post', 'put'])) {
-            $data = $this->Users->patchEntity($users, $this->request->getData());
+            $input = $this->request->getData();
+            $supplied = is_array($input['Users'] ?? null) ? $input['Users'] : $input;
+            $protected = ['email_address', 'password', 'user_type', 'school_id', 'status', 'activation_status', 'customer_code', 'forgot_password_status'];
+            if (array_intersect($protected, array_keys($supplied))) {
+                throw new \Cake\Http\Exception\BadRequestException('Supervisor credentials and identity cannot be changed through this form.');
+            }
+            $data = $this->Users->patchEntity($users, array_intersect_key(
+                $supplied,
+                array_flip(['title', 'first_name', 'last_name', 'gender', 'is_judge'])
+            ));
             
             if (count($data->getErrors()) == 0) {
                 
@@ -1128,47 +1671,9 @@ class UsersController extends AppController {
                 $data->created = date('Y-m-d H:i:s');
                 $data->modified = date('Y-m-d H:i:s');
                 if ($resultUT = $this->Users->save($data)) {
-                    
-                    // now send an email to teacher to verify account set password
-                    $emailId 				= $resultUT->email_address;
-                    $teacher_name 			= $resultUT->first_name;
-                    
-                    $school_name 			= $userDetails->first_name;
-                    
-                    $emailtemplateMessage = $this->Emailtemplates->find()->where(['Emailtemplates.id' => '4'])->first();
-
-                    $link = HTTP_PATH . "/homes/teacherverifyaccount/" . $resultUT->slug . "/" . md5($resultUT->slug) . "/" . md5($resultUT->id);
-                    //$sitelink = '<a style="color:#000; text-decoration: underline;" href="mailto:' . MAIL_FROM . '">' . MAIL_FROM . '</a>';
-                    
-                    $toRepArray 	= array('[!teacher_name!]','[!school_name!]','[!teacher_email_address!]','[!LINK!]','[!customer_code!]');
-                    $fromRepArray 	= array($teacher_name,$school_name,$emailId,$link,$userDetails->customer_code);
-                    
-                    $subjectToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['subject']);
-                    $messageToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['template']);
-                    
-                    //echo $messageToSend;exit;
-                    
-                    try {
-                        $email = new Email();
-                        $email->viewBuilder()
-                            ->setTemplate('default')
-                            ->setLayout('admintemplate')
-                            ->setVars(['content_for_layout' => $messageToSend]);
-                        $email->setEmailFormat('html')
-                            ->setTo($emailId)
-                            //->setCc(HEADERS_CC)
-                            ->setFrom([HEADERS_FROM_EMAIL => HEADERS_FROM_NAME])
-                            ->setSubject($subjectToSend)
-                            ->send();
-
-                        $this->Flash->success('Supervisor details added successfully. Supervisor will receive an email to verify account.');
-                    } catch (\Throwable $mailEx) {
-                        $this->log('Supervisor created but verification email failed: ' . $mailEx->getMessage(), 'error');
-                        $this->Flash->success('Supervisor details added successfully.');
-                        $this->Flash->error('Verification email could not be sent right now. Please verify SMTP settings and resend verification if needed.');
-                    }
-
-                    $this->redirect(['controller' => 'users', 'action' => 'teachers']);
+                    $this->Flash->success('Supervisor details added successfully.');
+                    $this->Flash->error('Supervisor account setup is temporarily unavailable; no invitation was sent. Please contact the events team.');
+                    return $this->redirect(['controller' => 'users', 'action' => 'teachers']);
                 }
                 
             } else {
@@ -1226,8 +1731,13 @@ class UsersController extends AppController {
     
     public function students() {
 
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        if (!in_array($this->request->getSession()->read('user_type'), ['School', 'Teacher_Parent'], true)) {
+            throw new \Cake\Http\Exception\ForbiddenException('School or supervisor access required.');
+        }
         
         $this->set("title_for_layout", "Students List" . TITLE_FOR_PAGES);
         $this->viewBuilder()->setLayout('home');
@@ -1249,20 +1759,7 @@ class UsersController extends AppController {
 
         if ($this->request->is('post')) {
             if (isset($this->request->getData()['action'])) {
-                $idList = implode(',', $this->request->getData()['chkRecordId']);
-                $action = $this->request->getData()['action'];
-                if ($idList) {
-                    if ($action == "Activate") {
-                        $this->Users->updateAll(['status' => '1'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are activated successfully.');
-                    } elseif ($action == "Deactivate") {
-                        $this->Users->updateAll(['status' => '0'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are deactivated successfully.');
-                    } elseif ($action == "Delete") {
-                        $this->Users->deleteAll(["id IN ($idList)"]);
-                        $this->Flash->success('Records are deleted successfully.');
-                    }
-                }
+                throw new \Cake\Http\Exception\BadRequestException('Use the available student list actions.');
             }
 
             if (isset($this->request->getData()['Users']['keyword']) && $this->request->getData()['Users']['keyword'] != '') {
@@ -1272,9 +1769,8 @@ class UsersController extends AppController {
             $searchArr = (array)$this->request->getParam('pass', []);
             if (!empty($searchArr[0])) {
                 foreach ($searchArr as $val) {
-                    if (strpos($val, ":") !== false) {
-                        $vars = explode(":", $val);
-                        ${$vars[0]} = urldecode($vars[1]);
+                    if (str_starts_with($val, 'keyword:')) {
+                        $keyword = urldecode(substr($val, 8));
                     }
                 }
             }
@@ -1288,34 +1784,35 @@ class UsersController extends AppController {
         $separator = implode("/", $separator);
         $this->set('separator', $separator);
         
-        // Build the query with CakePHP 4 syntax
-        $query = $this->Users->find();
-        
-        // Always filter by Student user type
-        $query = $query->where(['Users.user_type' => 'Student']);
-        
-        // Filter by school_id based on user_type
-        if (!empty($user_type)) {
+        $groups = [];
+        foreach (['active' => 1, 'archive' => 2, 'inactive' => 0] as $group => $status) {
+            $query = $this->Users->find()->where([
+                'Users.user_type' => 'Student',
+                'Users.status' => $status,
+            ])->select($this->Users)->leftJoin(['StudentAccess' => 'student_portal_accounts'], ['StudentAccess.student_id = Users.id'])
+                ->select(['portal_login_id' => 'StudentAccess.login_id', 'portal_first_login' => 'StudentAccess.first_login']);
+
             if ($user_type == "School") {
                 $query = $query->where(['Users.school_id' => $user_id]);
             } elseif ($user_type == "Teacher_Parent" && !empty($userDetails)) {
                 $query = $query->where(['Users.school_id' => $userDetails->school_id]);
             }
+
+            if (!empty($keyword)) {
+                $query = $query->where(function ($exp, $q) use ($keyword) {
+                    return $exp->like('Users.name', '%' . $keyword . '%');
+                });
+            }
+
+            $groups[$group] = $this->paginate($query, [
+                'scope' => $group,
+                'contain' => ['Schools'],
+                'limit' => 30,
+                'order' => ['Users.first_name' => 'ASC', 'Users.middle_name' => 'ASC', 'Users.last_name' => 'ASC', 'Users.id' => 'ASC'],
+                'allowedParameters' => ['page'],
+            ]);
         }
-        
-        // Add keyword search if provided
-        if (!empty($keyword)) {
-            $query = $query->where(function ($exp, $q) use ($keyword) {
-                return $exp->like('Users.name', '%' . $keyword . '%');
-            });
-        }
-        
-        $this->paginate = [
-            'contain' => ['Schools'],
-            'limit' => 1000,
-            'order' => ['Users.first_name' => 'ASC','Users.middle_name' => 'ASC','Users.last_name' => 'ASC']
-        ];
-        $this->set('users', $this->paginate($query));
+        $this->set('studentGroups', $groups);
         if (strtolower($this->request->getHeaderLine('X-Requested-With')) === 'xmlhttprequest') {
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Users');
@@ -1325,8 +1822,13 @@ class UsersController extends AppController {
     
     public function addstudent() {
         
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        if ($this->request->getSession()->read('user_type') !== 'School') {
+            throw new \Cake\Http\Exception\ForbiddenException('Only schools can add students.');
+        }
         
         //echo ' fsdf sdf sdf d';exit;
         $this->viewBuilder()->setLayout("home");
@@ -1349,7 +1851,8 @@ class UsersController extends AppController {
             
             //$this->prx($this->request->getData());
             
-            $data = $this->Users->patchEntity($users, $this->request->getData());
+            $input = (array)$this->request->getData('Users');
+            $data = $this->Users->patchEntity($users, array_intersect_key($input, array_flip(['first_name', 'middle_name', 'last_name', 'birth_year', 'gender'])));
             
             if (count($data->getErrors()) == 0) {
 
@@ -1388,8 +1891,13 @@ class UsersController extends AppController {
     
     public function editstudent($student_slug=null) {
         
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            return $login;
+        }
+        if ($this->request->getSession()->read('user_type') !== 'School') {
+            throw new \Cake\Http\Exception\ForbiddenException('Only schools can edit students.');
+        }
         
         //echo ' fsdf sdf sdf d';exit;
         $this->viewBuilder()->setLayout("home");
@@ -1408,13 +1916,17 @@ class UsersController extends AppController {
         $this->set('genderDD', $genderDD);
         
         // to get student details
-        $studentD = $this->Users->find()->where(['Users.slug' => $student_slug])->first();
+        $studentD = $this->Users->find()->where(['Users.slug' => $student_slug, 'Users.school_id' => $user_id, 'Users.user_type' => 'Student'])->first();
+        if (!$studentD) {
+            throw new \Cake\Http\Exception\NotFoundException('Student not found in your school Global Students List.');
+        }
         
         
         $users = $this->Users->get($studentD->id);
 
         if ($this->request->is(['post', 'put'])) {
-            $data = $this->Users->patchEntity($users, $this->request->getData());
+            $input = (array)$this->request->getData('Users');
+            $data = $this->Users->patchEntity($users, array_intersect_key($input, array_flip(['first_name', 'middle_name', 'last_name', 'birth_year', 'gender'])));
             
             if (count($data->getErrors()) == 0) {
                 
@@ -1429,6 +1941,40 @@ class UsersController extends AppController {
         
     }
     
+    public function archivestudents() {
+        $this->request->allowMethod(['post']);
+        $schoolId = (int)$this->request->getSession()->read('user_id');
+        if ($schoolId <= 0 || $this->request->getSession()->read('user_type') !== 'School') {
+            throw new \Cake\Http\Exception\ForbiddenException('Only schools can archive students.');
+        }
+        $selected = $this->request->getData('student_ids', []);
+        if (!is_array($selected) || !$selected) {
+            $this->Flash->error('Select at least one student to archive.');
+            return $this->redirect(['action' => 'students']);
+        }
+        $ids = [];
+        foreach ($selected as $id) {
+            if (!is_scalar($id) || !ctype_digit((string)$id) || (int)$id <= 0) {
+                throw new \Cake\Http\Exception\BadRequestException('Invalid student selection.');
+            }
+            $ids[] = (int)$id;
+        }
+        $ids = array_values(array_unique($ids));
+        $conditions = [
+            'Users.id IN' => $ids,
+            'Users.school_id' => $schoolId,
+            'Users.user_type' => 'Student',
+            'Users.status IN' => [0, 1],
+        ];
+        if ($this->Users->find()->where($conditions)->count() !== count($ids)) {
+            $this->Flash->error('No students were archived. Select only your school\'s active or inactive students.');
+            return $this->redirect(['action' => 'students']);
+        }
+        $count = $this->Users->updateAll(['status' => 2], $conditions);
+        $this->Flash->success($count . ' student(s) archived successfully.');
+        return $this->redirect(['action' => 'students']);
+    }
+
     public function archivestudent($student_slug=null) {
         
         $this->userLoginCheck();
@@ -1474,76 +2020,12 @@ class UsersController extends AppController {
     }
 
     public function generatestudentlogincode($student_slug=null) {
-
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
-
-        $sessionUserId = (int)$this->request->getSession()->read("user_id");
-        $sessionUserType = (string)$this->request->getSession()->read("user_type");
-
-        $schoolId = $sessionUserId;
-        if ($sessionUserType === 'Teacher_Parent') {
-            $sessionUser = $this->Users->find()->where(['Users.id' => $sessionUserId])->first();
-            if ($sessionUser && !empty($sessionUser->school_id)) {
-                $schoolId = (int)$sessionUser->school_id;
-            }
-        }
-
-        $studentD = $this->Users->find()->where([
-            'Users.slug' => $student_slug,
-            'Users.school_id' => $schoolId,
-            'Users.user_type' => 'Student'
-        ])->first();
-
-        if (!$studentD) {
-            $this->Flash->error('Student not found.');
-            return $this->redirect(['controller' => 'users', 'action' => 'students']);
-        }
-
-        $loginCode = $this->generateUniqueStudentLoginCode();
-
-        $this->Users->updateAll(['customer_code' => $loginCode], ['id' => $studentD->id]);
-
-        $this->Flash->success('Login code generated successfully: ' . $loginCode);
-        return $this->redirect(['controller' => 'users', 'action' => 'students']);
+        return $this->redirect(['action' => 'studentaccess', $student_slug]);
     }
 
     public function generateallstudentlogincodes() {
-
-        $this->userLoginCheck();
-        $this->schoolAdminLoginCheck();
-
-        $schoolId = (int)$this->request->getSession()->read("user_id");
-        $students = $this->Users->find()->where([
-            'Users.school_id' => $schoolId,
-            'Users.user_type' => 'Student',
-            'OR' => [
-                'Users.customer_code IS' => null,
-                'Users.customer_code' => ''
-            ]
-        ])->all();
-
-        $generatedCount = 0;
-        foreach ($students as $student) {
-            $this->Users->updateAll([
-                'customer_code' => $this->generateUniqueStudentLoginCode()
-            ], [
-                'id' => $student->id,
-                'OR' => [
-                    'customer_code IS' => null,
-                    'customer_code' => ''
-                ]
-            ]);
-            $generatedCount++;
-        }
-
-        if ($generatedCount > 0) {
-            $this->Flash->success('Login codes generated for ' . $generatedCount . ' student' . ($generatedCount === 1 ? '' : 's') . '.');
-        } else {
-            $this->Flash->success('All students already have a login code.');
-        }
-
-        return $this->redirect(['controller' => 'users', 'action' => 'students']);
+        $this->Flash->error('Student IDs are assigned automatically. Issue individual setup codes from the Account column.');
+        return $this->redirect(['action' => 'students']);
     }
 
     protected function generateUniqueStudentLoginCode() {
@@ -1632,9 +2114,6 @@ class UsersController extends AppController {
         $conventionDD = array_filter($conventionDD, function ($label, $conventionId) use ($activeConventionIds) {
             return isset($activeConventionIds[(int)$conventionId]);
         }, ARRAY_FILTER_USE_BOTH);
-        $conventionDD = array_filter($conventionDD, function ($label) {
-            return stripos($label, 'New Zealand') !== false || stripos($label, 'Indonesia') !== false;
-        });
         $this->set('conventionDD', $conventionDD);
         
         $users = $this->Users->newEntity([]);
@@ -1750,6 +2229,8 @@ class UsersController extends AppController {
         $contentFile = CONFIG . 'squad247_content.json';
         $defaultData = [
             'convention_subtitle' => 'Regional Student Conventions 2025',
+            'convention_dates_message' => '',
+            'convention_dates_message_enabled' => false,
             'application_intro' => 'Southern Cross Educational Enterprises is seeking applications from A.C.E. Graduates and supporters to join the 2025 Regional Convention 24/7 Squads in the following regions:',
             'success_requirements' => [
                 'Be at least 17 years of age (if under 18 and staying on site, events team will contact parent/guardian).',
@@ -1805,6 +2286,12 @@ class UsersController extends AppController {
                 if (isset($decoded['convention_subtitle'])) {
                     $squad247Data['convention_subtitle'] = trim((string)$decoded['convention_subtitle']);
                 }
+                if (isset($decoded['convention_dates_message'])) {
+                    $squad247Data['convention_dates_message'] = trim((string)$decoded['convention_dates_message']);
+                }
+                $squad247Data['convention_dates_message_enabled'] = array_key_exists('convention_dates_message_enabled', $decoded)
+                    ? filter_var($decoded['convention_dates_message_enabled'], FILTER_VALIDATE_BOOLEAN)
+                    : $squad247Data['convention_dates_message'] !== '';
                 if (isset($decoded['application_intro'])) {
                     $squad247Data['application_intro'] = trim((string)$decoded['application_intro']);
                 }
@@ -2077,7 +2564,7 @@ class UsersController extends AppController {
                     $emailtemplateMessage = $this->Emailtemplates->find()->where(['Emailtemplates.id' => '12'])->first();
                     
                     $toRepArray = array('[!first_name!]','[!last_name!]','[!email_address!]');
-                    $fromRepArray = array($userCheck->first_name,$userCheck->last_name,$$userCheck->email_address);
+                    $fromRepArray = array($userCheck->first_name,$userCheck->last_name,$userCheck->email_address);
                     
                     $subjectToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['subject']);
                     $messageToSend = str_replace($toRepArray, $fromRepArray, $emailtemplateMessage['template']);
@@ -2312,6 +2799,8 @@ class UsersController extends AppController {
         $this->request->getSession()->delete('user_id');
         $this->request->getSession()->delete('email_address');
         $this->request->getSession()->delete('user_type');
+        $this->request->getSession()->delete('student_portal_version');
+        $this->request->getSession()->delete('school_student_access');
         
         $this->request->getSession()->delete('sess_selected_convention_registration_id');
         $this->request->getSession()->delete('sess_selected_convention_id');
@@ -2321,21 +2810,7 @@ class UsersController extends AppController {
     }
     
     public function logintotest($user_id=null) {
-        
-        $userInfo = $this->Users->find()->where(['Users.id' => $user_id])->first();
-        
-        $this->request->getSession()->write("user_id", $userInfo->id);
-        $this->request->getSession()->write("email_address", $userInfo->email_address);
-        $this->request->getSession()->write("user_type", $userInfo->user_type);
-        $this->request->getSession()->write("last_login", $userInfo->last_login);
-        
-        if($userInfo->user_type == "Teacher_Parent" && $userInfo->is_judge == "1")
-        {
-            $this->request->getSession()->write("current_session_profile_type", 'Supervisor');
-        }
-        
-        $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
-        
+        throw new \Cake\Http\Exception\ForbiddenException('Passwordless test login is no longer available. Sign in with your credentials.');
     }
     
     public function judgingform($event_id_number = '055') {

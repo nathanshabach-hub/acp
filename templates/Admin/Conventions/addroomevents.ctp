@@ -33,11 +33,15 @@
                       <label class="col-sm-2 control-label">Choose Room <span class="require">*</span></label>
                       <div class="col-sm-10">
 						  <?php echo $this->Form->select('Conventionseasonroomevents.room_id', $convRooms, ['id' => 'room_id', 'label' => false, 'div' => false, 'class' => 'form-control required', 'autocomplete' => 'off', 'empty' =>'Choose Room']); ?>
-							<script>
-							$(document).ready(function() {
-								$('#room_id').select2();
-							});
-						</script>
+      						  <p class="help-block">This list shows rooms selected in Manage Rooms that are not yet configured for this season.</p>
+      						  <?php if (empty($convRooms)) { ?>
+      							  <div class="alert alert-info">All selected rooms are already configured for this season. Edit existing room events to make changes.</div>
+      						  <?php } ?>
+      							<script>
+      							$(document).ready(function() {
+      								$('#room_id').select2();
+      							});
+      						</script>
                       </div>
                     </div>
 					
@@ -50,6 +54,13 @@
 								$('#event_ids').select2();
 							});
 						</script>
+                      </div>
+                    </div>
+					<div class="form-group compact-field">
+                      <label class="col-sm-2 control-label">Number of Games <span class="require">*</span></label>
+                      <div class="col-sm-10">
+						<?php echo $this->Form->input('Conventionseasonroomevents.number_games', ['type' => 'number', 'min' => 1, 'step' => 1, 'label' => false, 'div' => false, 'class' => 'form-control required', 'value' => 1]); ?>
+						<div class="field-hint">How many games can run at once for this room setup.</div>
                       </div>
                     </div>
 					

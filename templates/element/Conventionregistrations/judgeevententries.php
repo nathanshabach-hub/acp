@@ -1,5 +1,6 @@
 <?php
 use Cake\ORM\TableRegistry;
+use App\Service\GuidelineBreachPolicy;
 $this->Users 				= TableRegistry::getTableLocator()->get('Users');
 $this->Judgeevaluations 	= TableRegistry::getTableLocator()->get('Judgeevaluations');
 $this->Crstudentevents 		= TableRegistry::getTableLocator()->get('Crstudentevents');
@@ -13,7 +14,7 @@ if (empty($activeJudgeUserIds)) {
 
 <!-- Mark Command Performance Modal -->
 <div id="commandModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:12px;padding:32px;width:360px;max-width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+  <div style="background:#fff;border-radius:12px;padding:32px;width:560px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,0.2);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h5 style="margin:0;font-size:1.1em;font-weight:600;">Mark Command Performance</h5>
       <span onclick="closeCommandModal()" style="cursor:pointer;font-size:1.4em;line-height:1;color:#888;">&times;</span>
@@ -54,13 +55,20 @@ function submitCommand() {
 
 <!-- Mark Guideline Breach Modal -->
 <div id="breachModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:12px;padding:32px;width:360px;max-width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+  <div style="background:#fff;border-radius:12px;padding:32px;width:560px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,0.2);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h5 style="margin:0;font-size:1.1em;font-weight:600;">Mark Guideline Breach</h5>
       <span onclick="closeBreachModal()" style="cursor:pointer;font-size:1.4em;line-height:1;color:#888;">&times;</span>
     </div>
-    <p style="margin-bottom:12px;font-size:0.95em;color:#444;">Please explain why you are marking this entry as a guideline breach:</p>
-    <textarea id="breachReason" placeholder="Enter reason for breach..." style="width:100%;height:100px;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:0.9em;resize:vertical;"></textarea>
+    <label for="breachLevel" style="display:block;margin-bottom:5px;font-weight:600;">Breach level</label>
+    <select id="breachLevel" required style="width:100%;padding:8px;margin-bottom:12px;border:1px solid #ccc;border-radius:6px;">
+      <option value="">Select a level</option>
+      <option value="minor">Minor — judged, but cannot place if accepted</option>
+      <option value="major">Major — not judged if accepted</option>
+      <option value="extreme">Extreme — not judged if accepted; Events Team may remove from display</option>
+    </select>
+    <label for="breachReason" style="display:block;margin-bottom:5px;font-weight:600;">Comment (required)</label>
+    <textarea id="breachReason" required placeholder="Explain the guideline breach..." style="width:100%;height:100px;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:0.9em;resize:vertical;"></textarea>
     <div style="display:flex;justify-content:center;gap:10px;margin-top:16px;">
       <button onclick="closeBreachModal()" style="padding:8px 18px;border-radius:6px;border:1px solid #ccc;background:#333;color:#fff;cursor:pointer;">Cancel</button>
       <button onclick="submitBreach()" style="padding:8px 18px;border-radius:6px;border:none;background:#c0392b;color:#fff;cursor:pointer;">Submit Breach</button>
@@ -71,6 +79,7 @@ function submitCommand() {
 var _breachUrl = '';
 function openBreachModal(url) {
   _breachUrl = url;
+  document.getElementById('breachLevel').value = '';
   document.getElementById('breachReason').value = '';
   document.getElementById('breachModal').style.display = 'flex';
 }
@@ -78,10 +87,20 @@ function closeBreachModal() {
   document.getElementById('breachModal').style.display = 'none';
 }
 function submitBreach() {
+  var level = document.getElementById('breachLevel').value;
   var reason = document.getElementById('breachReason').value.trim();
+  if (!level || !reason) {
+    window.alert('Select a breach level and enter a comment.');
+    return;
+  }
   var form = document.createElement('form');
   form.method = 'POST';
   form.action = _breachUrl;
+  var csrfToken = document.querySelector('input[name="_csrfToken"]');
+  if (csrfToken) form.appendChild(csrfToken.cloneNode(true));
+  var levelInput = document.createElement('input');
+  levelInput.type = 'hidden'; levelInput.name = 'breach_level'; levelInput.value = level;
+  form.appendChild(levelInput);
   var inp = document.createElement('input');
   inp.type = 'hidden'; inp.name = 'breach_reason'; inp.value = reason;
   form.appendChild(inp);
@@ -117,6 +136,7 @@ function submitBreach() {
 				<button type="button" onclick="closeEvaluationPreviewModal()" style="border:none;background:#fff;color:#333;font-size:20px;line-height:1;cursor:pointer;">&times;</button>
 			</div>
 		</div>
+		<div id="evaluationPreviewError" role="alert" class="alert alert-danger" style="display:none;margin:16px;"></div>
 		<iframe id="evaluationPreviewFrame" src="about:blank" style="width:100%;height:100%;border:0;background:#fff;" title="Evaluation Form Preview"></iframe>
 	</div>
 </div>
@@ -352,6 +372,10 @@ function openEvaluationPreviewModal(evaluationUrl, evaluationTitle) {
 
 	titleEl.textContent = evaluationTitle || 'Evaluation Form';
 	openNew.href = evaluationUrl;
+	var errorEl = document.getElementById('evaluationPreviewError');
+	errorEl.style.display = 'none';
+	errorEl.textContent = '';
+	frame.style.display = '';
 	frame.onload = function () {
 		var framePath = '';
 		try {
@@ -360,6 +384,13 @@ function openEvaluationPreviewModal(evaluationUrl, evaluationTitle) {
 			framePath = '';
 		}
 		if (framePath.indexOf('/conventionregistrations/judgeevententries/') !== -1) {
+			var errorMessage = frame.contentDocument.querySelector('.message.error, .alert-danger');
+			if (errorMessage) {
+				errorEl.textContent = errorMessage.textContent.trim();
+				errorEl.style.display = 'block';
+				frame.style.display = 'none';
+				return;
+			}
 			closeEvaluationPreviewModal();
 			window.location.reload();
 		}
@@ -402,6 +433,11 @@ document.addEventListener('click', function (event) {
 </script>
 
 <div class="admin_loader" id="loaderID"><?php echo $this->Html->image('loader_large_blue.gif');?></div>
+<?php if (!empty($isEventJudgingClosed)) { ?>
+	<div class="alert alert-warning" role="alert">
+		Judging is closed for this event. Evaluations cannot be opened until the Events Team reopens judging.
+	</div>
+<?php } ?>
 <?php
 $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 	? $eventsubmissionRows
@@ -457,6 +493,14 @@ $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 					</thead>
 					<tbody>
 						<?php foreach ($rowsToRender as $datarecord) { ?>
+						<?php
+						$canJudgeEntry = GuidelineBreachPolicy::canJudge($datarecord);
+						$canPlaceEntry = GuidelineBreachPolicy::canPlace($datarecord);
+						$breachStatus = (int)($datarecord->guideline_breach ?? 0);
+						$breachLevel = (string)($datarecord->guideline_breach_level ?? '');
+						$breachLevelLabel = ucfirst($breachLevel);
+						$teamResponse = trim((string)($datarecord->guideline_breach_team_response ?? ''));
+						?>
 						<tr>
 						<td data-title="Student Name / Group">
 						
@@ -649,25 +693,30 @@ $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 						
 <td data-title="Breach">
 					<?php
-					if($datarecord->guideline_breach == 0)
-					{
+					if (in_array($breachStatus, [GuidelineBreachPolicy::STATUS_NONE, GuidelineBreachPolicy::STATUS_REJECTED], true)) {
+						if ($breachStatus === GuidelineBreachPolicy::STATUS_REJECTED && $teamResponse !== '') {
+							echo '<div style="font-size:11px;color:#555;margin-bottom:4px;">Events Team: '.h($teamResponse).'</div>';
+						}
 						$breachUrl = $this->Url->build(['controller' => 'judgeevaluations', 'action' => 'markbreach', $datarecord->slug]);
-						echo '<button type="button" onclick="openBreachModal(\'' . $breachUrl . '\')" class="btn btn-sm btn-outline-danger" style="font-size:11px;padding:4px 8px;">Mark Breach</button>';
+						$buttonLabel = $breachStatus === GuidelineBreachPolicy::STATUS_REJECTED ? 'Resubmit Breach' : 'Mark Breach';
+						echo '<button type="button" onclick="openBreachModal(\'' . $breachUrl . '\')" class="btn btn-sm btn-outline-danger" style="font-size:11px;padding:4px 8px;">'.$buttonLabel.'</button>';
+					} elseif ($breachStatus === GuidelineBreachPolicy::STATUS_PENDING) {
+						echo '<span style="font-size:11px;color:#9c6a16;font-weight:600;">'.h($breachLevelLabel).' — Awaiting Events Team</span>';
+					} elseif ($breachStatus === GuidelineBreachPolicy::STATUS_ACCEPTED) {
+						$restriction = $breachLevel === GuidelineBreachPolicy::LEVEL_MINOR
+							? 'Judging allowed; no placement'
+							: 'Judging and placement closed';
+						echo '<span style="font-size:11px;color:#1f7a45;font-weight:600;">'.h($breachLevelLabel).' — Accepted</span><br><span style="font-size:11px;">'.h($restriction).'</span>';
 					}
-					else if($datarecord->guideline_breach == 1)
-					{
-						echo '<span style="font-size:11px;color:#9c6a16;">Awaiting admin</span>';
-					}
-					else if($datarecord->guideline_breach == 2)
-					{
-						echo '<span style="font-size:11px;color:#1f7a45;">Approved</span>';
+					if ($teamResponse !== '' && $breachStatus !== GuidelineBreachPolicy::STATUS_REJECTED) {
+						echo '<div style="font-size:11px;color:#555;margin-top:4px;">Events Team: '.h($teamResponse).'</div>';
 					}
 					?>
 				</td>
 				
 				<td data-title="Command">
 					<?php
-					if($datarecord->guideline_breach == 0)
+					if($canJudgeEntry && $breachStatus !== GuidelineBreachPolicy::STATUS_PENDING)
 					{
 						if($datarecord->command_performance == 1)
 						{
@@ -724,7 +773,11 @@ $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 					}
 				}
 
-				if (!empty($isSilverAppleEvent))
+				if (!$canJudgeEntry)
+				{
+					echo '<span style="font-size:11px;color:#777;">Judging closed</span>';
+				}
+				else if (!empty($isSilverAppleEvent))
 				{
 					$award = $silverAppleAwardsBySubmissionId[(int)$datarecord->id] ?? null;
 					echo $award !== null ? (int)$award['points'] : '<span style="color:#aaa;">—</span>';
@@ -773,7 +826,9 @@ $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 							$currentPlace = isset($existingPlaces[$datarecord->id]) ? $existingPlaces[$datarecord->id] : '';
 						?>
 						<td data-title="Place">
-							<?php if (!empty($isSilverAppleEvent)) {
+							<?php if (!$canPlaceEntry) { ?>
+								<span style="font-size:11px;color:#777;">No placement</span>
+							<?php } elseif (!empty($isSilverAppleEvent)) {
 								$award = $silverAppleAwardsBySubmissionId[(int)$datarecord->id] ?? null;
 								echo $award !== null ? (int)$award['place'] : '<span style="color:#aaa;">—</span>';
 							} elseif (!empty($isFourPlaceSportsEvent)) { ?>
@@ -796,11 +851,15 @@ $rowsToRender = isset($eventsubmissionRows) && is_array($eventsubmissionRows)
 						{
 							echo '<span style="font-size:11px;color:#aaa;">N/A</span>';
 						}
-						else if($datarecord->guideline_breach != 2)
+						else if(!empty($isEventJudgingClosed) || !$canJudgeEntry)
+						{
+							echo '<span style="font-size:11px;color:#777;">Judging closed</span>';
+						}
+						else
 						{
 							echo $this->Html->link('<i class="fa fa-pencil-square-o"></i> Evaluate', ['controller' => 'judgeevaluations', 'action' => 'addnew',$conv_reg_slug,$datarecord->slug], [ 'escape' => false, 'title' => 'Submit Evaluation', 'class'=>'btn btn-sm btn-primary js-evaluate-modal-trigger', 'style' => 'font-size:11px;padding:4px 9px;', 'data-confirm-message' => 'Are you sure you want to submit evaluation for this entry?', 'data-evaluate-url' => $this->Url->build(['controller' => 'judgeevaluations', 'action' => 'addnew',$conv_reg_slug,$datarecord->slug, '?' => ['popup' => 1]]), 'data-evaluate-title' => 'Evaluation Form']);
+							echo $this->Html->link('<i class="fa fa-times-circle-o"></i>', ['controller' => 'judgeevaluations', 'action' => 'markdidnotattend',$conv_reg_slug,$datarecord->slug], [ 'escape' => false, 'title' => 'Mark As Did Not Attend', 'class'=>'btn btn-sm btn-outline-secondary jee-dna-btn', 'style' => 'font-size:11px;padding:4px 8px;', 'confirm' => 'Are you sure you want to mark this submission as did not attend?']);
 						}
-						echo $this->Html->link('<i class="fa fa-times-circle-o"></i>', ['controller' => 'judgeevaluations', 'action' => 'markdidnotattend',$conv_reg_slug,$datarecord->slug], [ 'escape' => false, 'title' => 'Mark As Did Not Attend', 'class'=>'btn btn-sm btn-outline-secondary', 'style' => 'font-size:11px;padding:4px 8px;display:inline-flex;align-items:center;justify-content:center;width:auto;background:transparent;color:#6c757d;border:1px solid #6c757d;', 'confirm' => 'Are you sure you want to mark this submission as did not attend?']);
 						?>
 						</div>
 						</td>

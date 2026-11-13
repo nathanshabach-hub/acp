@@ -179,9 +179,9 @@ $showSearch = isset($showSearch) ? (bool)$showSearch : true;
                 }
                 foreach ($overallpositions as $position) {
                   $groupName = trim((string)($position->group_name ?? ''));
-                  $combinedLabel = $combinedSchoolLabels[(int)$position->user_id] ?? null;
+                  $combinedLabel = $combinedSchoolLabels['group:' . $position->group_name] ?? $combinedSchoolLabels[(int)$position->user_id] ?? null;
                   $rawCountKey = (int)$event->id.'|'.$groupName;
-                  if ($combinedLabel !== null && ($groupName === '' || ((int)($rawSubmissionCountsByEventGroup[$rawCountKey] ?? 0) > 1))) {
+                  if ($combinedLabel !== null && (isset($combinedSchoolLabels['group:' . $groupName]) || $groupName === '' || ((int)($rawSubmissionCountsByEventGroup[$rawCountKey] ?? 0) > 1))) {
                     $position->combined_school_name = $combinedLabel;
                   }
                   $canCollapseCombined = ($combinedLabel !== null)

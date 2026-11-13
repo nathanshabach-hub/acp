@@ -286,6 +286,7 @@
                     <?php echo $datarecord->Teachers['first_name'].' '.$datarecord->Teachers['last_name']; ?> [Assigned Students: <?php echo count($assignedStudents); ?>]
                 </legend>
                 <div class="drt">
+                    <p>Students must match their supervisor's gender. Each supervisor can be assigned at most 10 students across this convention. The parent-child exception is not available yet.</p>
                     <table class="table table-bordered table-striped table-condensed cf students-grid">
                         <colgroup>
                             <col class="col-idx">

@@ -59,17 +59,18 @@ define('TESTS', ROOT . DS . 'tests' . DS);
 /**
  * Path to the temporary files directory.
  */
-define('TMP', ROOT . DS . 'tmp' . DS);
+$environmentPaths = \App\Deployment\Environment::paths();
+define('TMP', $environmentPaths['tmp'] ?? ROOT . DS . 'tmp' . DS);
 
 /**
  * Path to the logs directory.
  */
-define('LOGS', ROOT . DS . 'logs' . DS);
+define('LOGS', $environmentPaths['logs'] ?? ROOT . DS . 'logs' . DS);
 
 /**
  * Path to the cache files directory. It can be shared between hosts in a multi-server setup.
  */
-define('CACHE', TMP . 'cache' . DS);
+define('CACHE', $environmentPaths['cache'] ?? TMP . 'cache' . DS);
 
 /**
  * The absolute path to the "cake" directory, WITHOUT a trailing DS.
@@ -83,5 +84,4 @@ define('CAKE_CORE_INCLUDE_PATH', ROOT . DS . 'vendors' . DS . 'cakephp' . DS . '
  */
 define('CORE_PATH', CAKE_CORE_INCLUDE_PATH . DS);
 define('CAKE', CORE_PATH . 'src' . DS);
-
 

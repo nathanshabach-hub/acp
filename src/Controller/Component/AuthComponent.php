@@ -8,9 +8,9 @@ use Cake\Controller\Component;
 class AuthComponent extends Component
 {
 	/**
-	 * @var array
+	 * @var array<string, mixed>
 	 */
-	protected $_defaultConfig = [
+	protected array $_defaultConfig = [
 		'sessionKey' => 'Auth.User',
 	];
 
@@ -51,4 +51,3 @@ class AuthComponent extends Component
 		$request->getSession()->delete($this->getConfig('sessionKey'));
 	}
 }
-

@@ -237,13 +237,6 @@ $schedulingD = $schedulingD ?? (object)[
 						
 						echo $this->Html->link('View/Start Scheduling', ['controller'=>'schedulings', 'action' => 'schedulecategory',$convention_season_slug], ['class'=>'btn btn-success canlcel_le admin-precheck-btn','title'=>'View/Start Scheduling']);
 
-						if (
-							!empty($schedulingD->conflict_user_ids) ||
-							!empty($schedulingD->conflict_user_ids_group)
-						) {
-							echo $this->Html->link('Resolve Conflict', ['controller'=>'schedulings', 'action' => 'resolveconflicts', $convention_season_slug], ['class'=>'btn btn-warning canlcel_le admin-precheck-btn', 'confirm' => 'Conflicts are detected. Do you want to run auto resolve now?']);
-						}
-						
 						echo $this->Html->link('Overwrite Timings', ['controller'=>'schedulings', 'action' => 'overwritetimings',$convention_season_slug], ['class'=>'btn btn-warning canlcel_le admin-precheck-btn','title'=>'Overwrite Timings']);
 						
 						echo $this->Html->link('Reports', ['controller'=>'schedulings', 'action' => 'reports',$convention_season_slug], ['class'=>'btn btn-info canlcel_le admin-precheck-btn','title'=>'Generate Reports']);

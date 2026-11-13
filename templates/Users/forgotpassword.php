@@ -4,7 +4,8 @@ $(document).ready(function () {
 });
 </script>
 
-<section class="position-relative">
+<section class="position-relative" style="background: linear-gradient(135deg, #1c2452 0%, #0f1633 60%, #1a3a5c 100%); background-size: 300% 300%; animation: hp-grad-shift 12s ease infinite;">
+	<canvas id="hp-particles" aria-hidden="true" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;"></canvas>
 	<div class=" left-element w-25">
 		<?php echo $this->Html->image('front/left-element.png'); ?>
 	</div>
@@ -21,7 +22,8 @@ $(document).ready(function () {
 					<div class="ryt-box-text form-group">
 						<div class="ersu_message"> <?php echo $this->Flash->render() ?> </div>
 							<?php echo $this->Form->create($users, ['id'=>'forgot_password_frm', 'type' => 'file']); ?>
-							<h2 class="mb-4">Forgot Password</h2>
+							<h2 class="mb-2">Forgot Password</h2>
+                            <p class="text-dark mb-3">An email reset link will be sent to your inbox.</p>
 							<div>
 								<div class="lables">
 									<span class="mb-0 me-1 col-4">Email Address</span>

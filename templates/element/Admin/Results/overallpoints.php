@@ -69,7 +69,10 @@ $this->Users = TableRegistry::getTableLocator()->get('Users');
                             <td style="text-align:center;"><?php $ex = $c['exhibits'] ?? 0; echo ($ex >= 2 ? $tick : $cross).'('.$ex.')'; ?></td>
                             <td style="text-align:center;"><?php $tm = $c['teams'] ?? 0; echo ($tm >= 2 ? $tick : $cross).'('.$tm.')'; ?></td>
                             <td>
-                                <?php echo $this->Html->link('<i class="fa fa-file-pdf-o"></i>', ['controller' => 'results', 'action' => 'certificate24by7pdf',$slug_convention_season,$studentD->slug,$pts], ['escape' => false, 'title' => 'Generate 24/7 Certificate', 'target'=>'_blank']); ?>
+                                <?php
+                                    $certificateResultQuery = $resultLabel !== '' ? ['result' => $resultLabel] : [];
+                                    echo $this->Html->link('<i class="fa fa-file-pdf-o"></i>', ['controller' => 'results', 'action' => 'certificate24by7pdf',$slug_convention_season,$studentD->slug,$pts, '?' => $certificateResultQuery], ['escape' => false, 'title' => 'Generate 24/7 Certificate', 'target'=>'_blank']);
+                                ?>
                                 <?php echo $this->Html->link('<i class="fa fa-print"></i>', ['controller' => 'results', 'action' => 'certificate24by7plainprint',$slug_convention_season,$studentD->slug,$pts], ['escape' => false, 'title' => 'Generate 24/7 Plain Print Certificate', 'target'=>'_blank', 'style' => 'margin-left:8px;']); ?>
                             </td>
                         </tr>
@@ -148,7 +151,11 @@ $this->Users = TableRegistry::getTableLocator()->get('Users');
                                 </td>
                                 <td data-title="24/7 Certificate">
                                     <?php if($show247Certificate): ?>
-                                        <?php echo $this->Html->link('<i class="fa fa-file-pdf-o"></i>', ['controller' => 'results', 'action' => 'certificate24by7pdf',$slug_convention_season,$studentD->slug,$pointsS], ['escape' => false, 'title' => 'Generate 24/7 Certificate', 'target'=>'_blank']); ?>
+                                        <?php
+                                            $studentResultLabel = (string)($award247ResultByStudent[(int)$student_id] ?? '');
+                                            $studentCertificateResultQuery = $studentResultLabel !== '' ? ['result' => $studentResultLabel] : [];
+                                            echo $this->Html->link('<i class="fa fa-file-pdf-o"></i>', ['controller' => 'results', 'action' => 'certificate24by7pdf',$slug_convention_season,$studentD->slug,$pointsS, '?' => $studentCertificateResultQuery], ['escape' => false, 'title' => 'Generate 24/7 Certificate', 'target'=>'_blank']);
+                                        ?>
                                         <?php echo $this->Html->link('<i class="fa fa-print"></i>', ['controller' => 'results', 'action' => 'certificate24by7plainprint',$slug_convention_season,$studentD->slug,$pointsS], ['escape' => false, 'title' => 'Generate 24/7 Plain Print Certificate', 'target'=>'_blank', 'style' => 'margin-left:8px;']); ?>
                                     <?php endif; ?>
                                 </td>

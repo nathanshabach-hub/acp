@@ -116,6 +116,13 @@ if ($isSmallConvention) {
 			</div>
 
 			<?php echo $this->Html->link('<< Back', ['controller' => 'conventionregistrations', 'action' => 'studentevents'], ['class' => 'btn btn-secondary mb-3']); ?>
+            <?php if (!empty($studentChoicesLocked)): ?>
+                <div class="alert alert-success">Approved &#10004; Your event choices are locked. Your school or assigned supervisor can make changes. You can upload submissions through Registration Checklist.</div>
+            <?php elseif (!empty($eventReview) && $eventReview['status'] === 'pending'): ?>
+                <div class="alert alert-warning">Pending review. Student uploads are blocked until the school or assigned supervisor approves. <?= $this->request->getSession()->read('user_type') === 'Student' ? 'Saving revised choices replaces the pending selection.' : 'Save and approve event choices to apply the displayed choices immediately.' ?></div>
+            <?php elseif ($this->request->getSession()->read('user_type') === 'Student'): ?>
+                <div class="alert alert-info">Choose your events and save to send them to your school for review. Uploads unlock after school approval.</div>
+            <?php endif; ?>
 
 			<div class="pdf-form-shell">
 				<div class="pdf-form-head">EVENT REGISTRATION FORM</div>
@@ -139,7 +146,7 @@ if ($isSmallConvention) {
 					<div><input id="filter" type="text" data-type="search" class="form-control" placeholder="Type to search event number or name"></div>
 				</div>
 
-				<?php echo $this->Form->create($conventionregistrationstudents, ['id' => 'addstudentevent', 'type' => 'file', 'class' => '']); ?>
+				<?php echo $this->Form->create(null, ['id' => 'addstudentevent', 'type' => 'file', 'class' => '']); ?>
 
 				<div id="event_blocks" class="category-columns <?php echo $isSmallConvention ? 'small-convention-grid' : ''; ?>">
 					<?php foreach ($categoryColumns as $columnCategories): ?>
@@ -327,7 +334,7 @@ if ($isSmallConvention) {
 
 				<div class="form-group form-btns">
 					<label></label>
-					<button type="submit" class="btn btn-secondary" <?php if ($regAccepted == 0) echo 'disabled'; ?>>Save Event Registration</button>
+					<button type="submit" class="btn btn-secondary" <?php if ($regAccepted == 0) echo 'disabled'; ?>><?= $this->request->getSession()->read('user_type') === 'Student' ? 'Save choices for school review' : 'Save and approve event choices' ?></button>
 					<?php echo $this->Html->link('Cancel', ['controller' => 'conventionregistrations', 'action' => 'studentevents'], ['class' => 'btn btn-secondary']); ?>
 				</div>
 

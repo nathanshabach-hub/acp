@@ -35,7 +35,10 @@ class CombinerequestsController extends AppController {
 
     public function viewlist() {
 
-        $this->userLoginCheck();
+        $loginCheck = $this->userLoginCheck();
+        if ($loginCheck !== true) {
+            return $loginCheck;
+        }
         //$this->schoolAdminLoginCheck();
 		$this->multiLoginCheck(['School','Teacher_Parent']);
 		
@@ -52,75 +55,85 @@ class CombinerequestsController extends AppController {
         $this->set('userDetails', $userDetails);
 
         $separator = array();
-        $condition = array();
-		
-		if($this->request->getSession()->read("sess_selected_convention_registration_id")>0)
-		{
-			$condition[] = "(Combinerequests.conventionregistration_id = '".$this->request->getSession()->read("sess_selected_convention_registration_id")."')";
-		}
-		else
-		{
+        $registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+        $schoolId = $user_type === 'Teacher_Parent' ? (int)($userDetails->school_id ?? 0) : (int)$user_id;
+        if ($registrationId <= 0 || $schoolId <= 0 || !$this->Conventionregistrations->find()->where([
+            'Conventionregistrations.id' => $registrationId,
+            'Conventionregistrations.user_id' => $schoolId,
+        ])->first()) {
 			$this->Flash->error('Please choose convention registration first.');
-			$this->redirect(['controller' => 'users', 'action' => 'dashboard']);
-		}
-		
-		// if Teacher_Parent is logged in then need to choose school id
-		if($user_type == "Teacher_Parent")
-		{
-			$condition[] = "(Combinerequests.user_id = '".$userDetails->school_id."')";
-		}
-		else
-		{
-			$condition[] = "(Combinerequests.user_id = '".$user_id."')";
+			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
 		}
 
         if ($this->request->is('post')) {
-            if (isset($this->request->getData()['action'])) {
-                $idList = implode(',', $this->request->getData()['chkRecordId']);
-                $action = $this->request->getData()['action'];
-                if ($idList) {
-                    if ($action == "Activate") {
-                        $this->Combinerequests->updateAll(['status' => '1'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are activated successfully.');
-                    } elseif ($action == "Deactivate") {
-                        $this->Combinerequests->updateAll(['status' => '0'], ["id IN ($idList)"]);
-                        $this->Flash->success('Records are deactivated successfully.');
-                    } elseif ($action == "Delete") {
-                        $this->Combinerequests->deleteAll(["id IN ($idList)"]);
-                        $this->Flash->success('Records are deleted successfully.');
+            if ($this->request->getData('action') !== null) {
+                $ids = array_values(array_filter(array_map('intval', (array)$this->request->getData('chkRecordId')), static fn($id) => $id > 0));
+                $action = $this->request->getData('action');
+                if ($ids) {
+                    $conditions = ['id IN' => $ids, 'user_id' => $schoolId, 'conventionregistration_id' => $registrationId];
+                    if ((new \App\Service\CombinedTeams($this->Combinerequests->getConnection()))->available()) {
+                        $conditions['combined_team_id IS'] = null;
                     }
+                    if ($action == "Activate") {
+                        $affected = $this->Combinerequests->updateAll(['status' => '1'], $conditions);
+                    } elseif ($action == "Deactivate") {
+                        $affected = $this->Combinerequests->updateAll(['status' => '0'], $conditions);
+                    } elseif ($action == "Delete") {
+                        $affected = $this->Combinerequests->deleteAll($conditions);
+                    } else {
+                        $this->Flash->error('Invalid action.');
+                    }
+                    if (isset($affected)) {
+                        if ($affected > 0) {
+                            $this->Flash->success($affected . ' request(s) updated.');
+                        } else {
+                            $this->Flash->error('No matching requests were changed.');
+                        }
+                    }
+                } else {
+                    $this->Flash->error('Please select at least one request.');
                 }
             }
 
-            if (isset($this->request->getData()['Combinerequests']['keyword']) && $this->request->getData()['Combinerequests']['keyword'] != '') {
-                $keyword = trim($this->request->getData()['Combinerequests']['keyword']);
+            if (is_string($this->request->getData('Combinerequests.keyword'))) {
+                $keyword = trim($this->request->getData('Combinerequests.keyword'));
             }
         } elseif ($this->request->getParam('pass')) {
-            if (isset($this->request->getParam('pass', [])[0]) && $this->request->getParam('pass', [])[0] != '') {
-                $searchArr = $this->request->getParam('pass', []);
-                foreach ($searchArr as $val) {
-                    if (strpos($val, ":") !== false) {
-                        $vars = explode(":", $val);
-                        ${$vars[0]} = urldecode($vars[1]);
-                    }
+            foreach ($this->request->getParam('pass', []) as $value) {
+                if (str_starts_with($value, 'keyword:')) {
+                    $keyword = urldecode(substr($value, strlen('keyword:')));
                 }
             }
         }
 
         if (isset($keyword) && $keyword != '') {
             $separator[] = 'keyword:' . urlencode($keyword);
-            $condition[] = "(Combinerequests.name LIKE '%".addslashes($keyword)."%')";
             $this->set('keyword', $keyword);
         }
 		
         $separator = implode("/", $separator);
         $this->set('separator', $separator);
-        $this->paginate = ['contain' => ['Conventions','Combineduser','Events'],'conditions' => $condition, 'limit' => 30, 'order' => ['combinerequests.season_year' => 'DESC']];
-        $this->set('combinerequests', $this->paginate($this->Combinerequests));
+        $query = $this->Combinerequests->find()->where([
+            'Combinerequests.conventionregistration_id' => $registrationId,
+            'Combinerequests.user_id' => $schoolId,
+        ])->contain(['Conventions', 'Combineduser', 'Events']);
+        $teamsService = new \App\Service\CombinedTeams($this->Combinerequests->getConnection());
+        $this->set('combinedTeams', $teamsService->listing($registrationId));
+        if ($teamsService->available()) {
+            $query->where(['Combinerequests.combined_team_id IS' => null]);
+        }
+        if (isset($keyword) && $keyword != '') {
+            $query->where(['OR' => [
+                'Combinerequests.student_name LIKE' => '%' . $keyword . '%',
+                'Combinerequests.event_id_number LIKE' => '%' . $keyword . '%',
+            ]]);
+        }
+        $this->paginate = ['limit' => 30, 'order' => ['Combinerequests.id' => 'DESC']];
+        $this->set('combinerequests', $this->paginate($query));
         if ($this->request->is("ajax")) {
-            $this->viewBuilder()->setLayout(($this->request->is("ajax")) ? "" : "default");
+            $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Combinerequests');
-            $this->render('viewlist');
+            return $this->render('viewlist');
         }
     }
 	
@@ -156,6 +169,9 @@ class CombinerequestsController extends AppController {
 		$selectedEventId = 0;
 		$selectedStudentIds = [];
 		$selectedCombineWithUserId = 0;
+        $partnerRegisteredStudents = [];
+        $selectedPartnerStudentIds = [];
+        $teamsService = new \App\Service\CombinedTeams($this->Combinerequests->getConnection());
 		
 		$sessSelectedConventionRegistrationId = (int)$this->request->getSession()->read("sess_selected_convention_registration_id");
 		if ($sessSelectedConventionRegistrationId <= 0) {
@@ -184,6 +200,11 @@ class CombinerequestsController extends AppController {
 				$this->Flash->error('Could not find an active convention registration for your account. Please select your convention from the top dropdown first.');
 				return $this->redirect(['controller' => 'conventionregistrations', 'action' => 'myregistrations']);
 			}
+            $schoolId = $userDetails->user_type === 'School' ? (int)$userDetails->id : (int)$userDetails->school_id;
+            if (!in_array($userDetails->user_type, ['School', 'Teacher_Parent'], true)
+                || (int)$conventionRegD->user_id !== $schoolId) {
+                throw new \Cake\Http\Exception\ForbiddenException('Choose your own school convention registration.');
+            }
 			
 			/* 1. to get the list of event ids chosen in this convention for this season */
 			$arrConvSeasonEvents = array();
@@ -199,6 +220,8 @@ class CombinerequestsController extends AppController {
 			$eventNameIDDD = array();
 			$condEvents = array();
 			$condEvents[] = "(Events.id IN ($arrConvSeasonEventsImplode) )";
+            $condEvents['Events.group_event_yes_no'] = 1;
+            $condEvents['Events.status'] = 1;
 			$eventsList = $this->Events->find()->where($condEvents)->order(['Events.event_id_number' => 'ASC'])->all();
 			foreach($eventsList as $eventrec)
 			{
@@ -222,6 +245,9 @@ class CombinerequestsController extends AppController {
 			$condSchoolsNameCR = array();
 			$condSchoolsNameCR[] = "(Users.id IN ($arrSchoolIDSCRImplode) )";
 			$condSchoolsNameCR[] = "(Users.user_type = 'School')";
+            $condSchoolsNameCR['Users.id !='] = $schoolId;
+            $condSchoolsNameCR['Users.status'] = 1;
+            $condSchoolsNameCR['Users.activation_status'] = 1;
 			$schoolsListCR = $this->Users->find()->where($condSchoolsNameCR)->order(['Users.first_name' => 'ASC'])->all();
 			foreach($schoolsListCR as $schoollistcr)
 			{
@@ -235,11 +261,20 @@ class CombinerequestsController extends AppController {
 				$selectedStudentIds = array_values(array_unique(array_filter(array_map('intval', (array)$this->request->getData('selected_student_ids')), static function ($sid) {
 					return $sid > 0;
 				})));
+                $selectedPartnerStudentIds = (array)$this->request->getData('partner_student_ids', []);
 			} else {
 				$selectedEventId = (int)$this->request->getQuery('event_id');
+                $selectedCombineWithUserId = (int)$this->request->getQuery('partner_id');
 			}
 
 			$eventRegisteredStudents = $this->getRegisteredStudentsForEvent($sess_selected_convention_registration_id, $selectedEventId);
+            $partnerRegistration = $this->Conventionregistrations->find()->where([
+                'Conventionregistrations.conventionseason_id' => $conventionRegD->conventionseason_id,
+                'Conventionregistrations.user_id' => $selectedCombineWithUserId,
+            ])->first();
+            if (isset($schoolNamesDD[$selectedCombineWithUserId]) && $partnerRegistration && isset($eventNameIDDD[$selectedEventId])) {
+                $partnerRegisteredStudents = $teamsService->students((int)$partnerRegistration->id, $selectedEventId);
+            }
 			
 			//$this->prx($schoolNamesDD);
 			
@@ -253,7 +288,9 @@ class CombinerequestsController extends AppController {
 		if ($this->request->is('post')) {
 			$eventId = (int)($this->request->getData('Combinerequests.event_id') ?? 0);
 			$combineWithUserId = (int)($this->request->getData('Combinerequests.combine_with_user_id') ?? 0);
-			if ($eventId <= 0) {
+			if ($this->request->getData('agreement_confirmed') !== '1') {
+                $this->Flash->error('Confirm that both schools have agreed to this combined team.');
+            } elseif ($eventId <= 0) {
 				$this->Flash->error('Please choose an event.');
 			} elseif ($combineWithUserId <= 0) {
 				$this->Flash->error('Please choose school to combine with.');
@@ -276,30 +313,16 @@ class CombinerequestsController extends AppController {
 					if (empty($validStudentIds)) {
 						$this->Flash->error('Selected students are not registered for this event. Please select from the list.');
 					} else {
-						$savedCount = 0;
-						$now = date('Y-m-d H:i:s');
-						foreach ($validStudentIds as $studentId) {
-							$studentName = (string)$eventRegisteredStudents[$studentId];
-							$newRequest = $this->Combinerequests->newEntity([]);
-							$newRequest->slug = 'combined-request-event-'.$sess_selected_convention_registration_id.'-'.$studentId.'-'.time();
-							$newRequest->event_id = $eventD->id;
-							$newRequest->event_id_number = $eventD->event_id_number;
-							$newRequest->combine_with_user_id = $combineWithUserId;
-							$newRequest->student_name = $studentName;
-							$newRequest->conventionregistration_id = $sess_selected_convention_registration_id;
-							$newRequest->conventionseason_id = $conventionRegD->conventionseason_id;
-							$newRequest->convention_id = $conventionRegD->convention_id;
-							$newRequest->user_id = $conventionRegD->user_id;
-							$newRequest->season_id = $conventionRegD->season_id;
-							$newRequest->season_year = $conventionRegD->season_year;
-							$newRequest->status = 2;
-							$newRequest->created = $now;
-							$newRequest->modified = $now;
-
-							if ($this->Combinerequests->save($newRequest)) {
-								$savedCount++;
-							}
-						}
+                        $savedCount = 0;
+                        try {
+                            $teamsService->request((int)$conventionRegD->id, $schoolId, (int)$user_id, $eventId, $combineWithUserId, (array)$this->request->getData('selected_student_ids', []), $selectedPartnerStudentIds);
+                            $savedCount = count($validStudentIds);
+                        } catch (\DomainException $error) {
+                            $this->Flash->error($error->getMessage());
+                        } catch (\Exception $error) {
+                            $this->log('Combined team request could not be saved: ' . $error->getMessage(), 'error');
+                            $this->Flash->error('The combined-team request could not be saved. Check migration 009 is installed or contact the events team.');
+                        }
 
 						if ($savedCount > 0) {
 							$adminD = $this->Admins->find()->where(['Admins.id' => 1])->first();
@@ -323,19 +346,18 @@ class CombinerequestsController extends AppController {
 							}
 
 							if ($savedCount === count($validStudentIds)) {
-								$this->Flash->success('We have received your request. Admin will review and you will get notified if request approved or decline.');
+								$this->Flash->success('Combined team requested for both schools. Admin will approve or decline the whole team; the partner school does not need to submit another request.');
 							} else {
 								$this->Flash->success('Request saved for '.$savedCount.' student(s). Some students could not be saved.');
 							}
 							return $this->redirect(['controller' => 'combinerequests', 'action' => 'viewlist']);
 						}
 
-						$this->Flash->error('Could not save request. Please try again.');
 					}
 				}
 			}
 		}
-		$this->set(compact('combinerequests', 'eventNameIDDD', 'schoolNamesDD', 'eventRegisteredStudents', 'selectedEventId', 'selectedStudentIds', 'selectedCombineWithUserId'));
+		$this->set(compact('combinerequests', 'eventNameIDDD', 'schoolNamesDD', 'eventRegisteredStudents', 'selectedEventId', 'selectedStudentIds', 'selectedCombineWithUserId', 'partnerRegisteredStudents', 'selectedPartnerStudentIds'));
         $this->set('conventionregistrationstudents', $conventionregistrationstudents);
     }
 
@@ -344,31 +366,10 @@ class CombinerequestsController extends AppController {
 			return [];
 		}
 
-		$eventStudents = $this->Crstudentevents->find()
-			->contain(['Students'])
-			->where([
-				'Crstudentevents.conventionregistration_id' => $conventionRegistrationId,
-				'Crstudentevents.event_id' => $eventId,
-				'Crstudentevents.student_id >' => 0,
-			])
-			->order(['Students.first_name' => 'ASC', 'Students.last_name' => 'ASC'])
-			->all();
-
 		$students = [];
-		foreach ($eventStudents as $eventStudent) {
-			$studentId = (int)($eventStudent->student_id ?? 0);
-			if ($studentId <= 0 || isset($students[$studentId])) {
-				continue;
-			}
-
-			if (!empty($eventStudent->Students)) {
-				$studentName = trim((string)$eventStudent->Students->first_name.' '.(string)$eventStudent->Students->middle_name.' '.(string)$eventStudent->Students->last_name);
-				$studentName = preg_replace('/\s+/', ' ', $studentName ?? '');
-				if ($studentName !== '') {
-					$students[$studentId] = $studentName;
-				}
-			}
-		}
+        foreach ((new \App\Service\CombinedTeams($this->Crstudentevents->getConnection()))->students($conventionRegistrationId, $eventId) as $student) {
+            $students[(int)$student['id']] = trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name']);
+        }
 
 		return $students;
 	}

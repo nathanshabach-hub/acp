@@ -143,6 +143,9 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
 						
 						<td data-title="Action" class="cr-es-action-cell">
 							<div class="cr-es-action-wrap">
+                            <?php if (!empty($combinedUploadLinks[$datarecord->id]) && empty($submissionsLocked)): ?>
+                                <?= $this->Html->link('Upload/update shared team', $combinedUploadLinks[$datarecord->id], ['class' => 'cr-es-action-btn is-view']) ?>
+                            <?php endif; ?>
 							<?php
 							if($userDetails->user_type == "School")
 							{
@@ -158,7 +161,7 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
 									}
 									
 								}
-								else
+								elseif (!$datarecord->combined_team_id)
 								{
 									echo $this->Html->link('Remove', ['controller' => 'eventsubmissions', 'action' => 'removesubmission',$datarecord->slug], [ 'escape' => false, 'title' => 'Remove', 'class'=>'cr-es-action-btn is-remove', 'confirm' => 'Are you sure you want to remove this submission?']);
 								}
@@ -225,7 +228,6 @@ $('#group_events_table').dataTable({
         border-radius: 0rem !important;
     }
 </style>
-
 
 
 

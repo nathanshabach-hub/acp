@@ -115,6 +115,13 @@ if($conventionseasons->registration_end_date != '0000-00-00')
                       </div>
                     </div>
 					
+                    <div class="form-group">
+                      <label class="col-sm-2 control-label" for="judge-registration-fees">Judges Registration (<?php echo CURR; ?>)</label>
+                      <div class="col-sm-10">
+                          <?= $this->Form->input('Conventionseasons.judge_registration_fees', ['id' => 'judge-registration-fees', 'label' => false, 'type' => 'number', 'min' => 0, 'max' => '99999999.99', 'step' => '0.01', 'class' => 'form-control']) ?>
+                          <em>Standalone judges only. Leave blank to disable fee selection; enter 0 for free registration. School supervisors acting as judges are exempt.</em>
+                      </div>
+                    </div>
 					<div class="form-group">
                       <label class="col-sm-2 control-label">Min. Event Students <span class="require">*</span></label>
                       <div class="col-sm-10">

@@ -113,8 +113,8 @@ $showSearch = isset($showSearch) ? (bool)$showSearch : true;
                 }
                 foreach ($overallpositions as $position) {
                   $groupName = trim((string)($position->group_name ?? ''));
-                  $combinedLabel = $combinedSchoolLabels[(int)$position->user_id] ?? null;
-                  if ($combinedLabel !== null && ($groupName === '' || ((int)($rawSubmissionCountsByGroup[$groupName] ?? 0) > 1))) {
+                  $combinedLabel = $combinedSchoolLabels['group:' . $position->group_name] ?? $combinedSchoolLabels[(int)$position->user_id] ?? null;
+                  if ($combinedLabel !== null && (isset($combinedSchoolLabels['group:' . $groupName]) || $groupName === '' || ((int)($rawSubmissionCountsByGroup[$groupName] ?? 0) > 1))) {
                     $position->combined_school_name = $combinedLabel;
                   }
                   $canCollapseCombined = ($combinedLabel !== null)

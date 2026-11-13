@@ -16,6 +16,7 @@
                             <th class="sorting_paging">Gender</th>
                             <th class="sorting_paging">Age</th>
                             <th class="sorting_paging">Events(s)</th>
+                            <th>School review</th>
                             <th class="action_dvv">Action</th>
                         </tr>
                     </thead>
@@ -23,6 +24,9 @@
                         <?php
 						foreach ($studentList as $datarecord)
 						{
+                            $review = $eventReviews[(int)$datarecord->id] ?? null;
+                            $pendingReview = $review && $review['status'] === 'pending';
+                            $approvedChoices = ($review && $review['status'] === 'approved') || (!$review && !empty($datarecord->event_ids));
 						?>
                             
                             <tr>
@@ -33,7 +37,9 @@
                                  
 								<td data-title="Events(s)">
 								<?php
-								if($datarecord->event_ids)
+                                if ($pendingReview)
+                                    echo count(array_filter(explode(',', $review['event_ids'])));
+                                elseif($datarecord->event_ids)
 									echo count(explode(",",$datarecord->event_ids));
 								else
 									echo 0;
@@ -41,13 +47,25 @@
 								</td>
 								
 								
+                                <td data-title="School review">
+                                    <?php if ($pendingReview): ?>
+                                        <span class="badge bg-warning text-dark">Pending review</span>
+                                    <?php elseif ($approvedChoices): ?>
+                                        <span style="color:#198754" aria-label="Approved">&#10004; Approved</span>
+                                    <?php else: ?>
+                                        <span>No choices saved</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td data-title="Action" class="cr-action-cell">
+                                    <?php if ($pendingReview && $userDetails->user_type === 'School'): ?>
+                                        <?= $this->Html->link('Review choices', ['action' => 'reviewstudentevents', $datarecord->slug], ['class' => 'cr-action-btn cr-action-manage']) ?>
+                                    <?php endif; ?>
                                     <?php
-                                    echo $this->Html->link('Manage Events', ['controller' => 'conventionregistrations', 'action' => 'managestudentevents',$datarecord->slug], [ 'escape' => false, 'title' => 'Manage Student Events', 'class'=>'cr-action-btn cr-action-manage']);
+                                    echo $this->Html->link($approvedChoices && $userDetails->user_type === 'Student' ? 'View approved events' : 'Manage Events', ['controller' => 'conventionregistrations', 'action' => 'managestudentevents',$datarecord->slug], [ 'escape' => false, 'title' => 'Manage Student Events', 'class'=>'cr-action-btn cr-action-manage']);
 									
-									if($userDetails->user_type == "School")
+									if(in_array($userDetails->user_type, ['School', 'Teacher_Parent'], true))
 									{
-                                            echo $this->Html->link('Remove All', ['controller' => 'conventionregistrations', 'action' => 'removestudentevent',$datarecord->slug], [ 'escape' => false, 'title' => 'Remove all events of this student', 'class'=>'cr-action-btn cr-action-remove', 'confirm' => 'Are you sure you want to remove all events of this student ?']);
+                                            echo '<button type="submit" class="cr-action-btn cr-action-remove" formaction="' . h($this->Url->build(['action' => 'removestudentevent', $datarecord->slug])) . '" onclick="return confirm(\'Remove all events and pending choices for this student?\')">Remove All</button>';
 									}
 									?>
                                 </td>

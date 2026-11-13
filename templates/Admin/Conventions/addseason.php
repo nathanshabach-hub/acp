@@ -111,6 +111,13 @@
                     </div>
 					
 					<div class="form-group">
+                      <label class="col-sm-2 control-label" for="judge-registration-fees">Judges Registration (<?php echo CURR; ?>)</label>
+                      <div class="col-sm-10">
+                          <?= $this->Form->input('Conventionseasons.judge_registration_fees', ['id' => 'judge-registration-fees', 'label' => false, 'type' => 'number', 'min' => 0, 'max' => '99999999.99', 'step' => '0.01', 'class' => 'form-control']) ?>
+                          <em>Standalone judges only. Leave blank until configured; enter 0 for free registration.</em>
+                      </div>
+                    </div>
+                    <div class="form-group">
                       <label class="col-sm-2 control-label">Min. Event Students <span class="require">*</span></label>
                       <div class="col-sm-10">
                           <?php echo $this->Form->input('Conventionseasons.min_events_student', ['label'=>false, 'min'=>1, 'max'=>100, 'type'=>'number', 'div'=>false, 'class'=>'form-control required']); ?>

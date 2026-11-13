@@ -105,7 +105,7 @@ $this->Judgeevaluations = TableRegistry::getTableLocator()->get('Judgeevaluation
 									<input type="number" name="result_avg_marks_<?php echo $datarecord->id; ?>" id="result_avg_marks_<?php echo $datarecord->id; ?>" value="<?php echo $avgMarksSub;?>" />
 								</td>
 								
-								<td data-title="School"><?php echo h($combinedSchoolLabelsBySubmission[(int)$datarecord->id] ?? $combinedSchoolLabelsBySubmissionFallback[(int)$datarecord->id] ?? $datarecord->Users['first_name']); ?></td>
+								<td data-title="School"><?php echo h($combinedSchoolLabels['group:' . $datarecord->group_name] ?? $combinedSchoolLabelsBySubmission[(int)$datarecord->id] ?? $combinedSchoolLabelsBySubmissionFallback[(int)$datarecord->id] ?? $datarecord->Users['first_name']); ?></td>
                                 <td data-title="Student/Group">
 								<?php 
 								if($datarecord->student_id>0)

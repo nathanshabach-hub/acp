@@ -103,6 +103,19 @@ class AppController extends Controller{
 			// Some live database exports do not include the legacy admins table.
 		}
         $this->set('adminInfo', $adminInfo);
+        $session = $this->request->getSession();
+        if (strtolower((string)$this->request->getParam('prefix')) !== 'admin'
+            && $session->read('user_type') === 'Teacher_Parent'
+            && $session->read('current_session_profile_type') === 'Supervisor'
+            && (int)$session->read('sess_selected_convention_registration_id') > 0) {
+            try {
+                $this->set('supervisorAgreementRequired', (new \App\Service\SupervisorAgreements($this->Users->getConnection()))
+                    ->pending((int)$session->read('user_id'), (int)$session->read('sess_selected_convention_registration_id')));
+            } catch (\DomainException $error) {
+                $this->set('supervisorAgreementRequired', true);
+                $this->set('supervisorAgreementError', $error->getMessage());
+            }
+        }
 		//$this->prx($adminInfo);
 		
         
@@ -168,6 +181,59 @@ class AppController extends Controller{
 		parent::beforeFilter($event);
 
 		$prefix = strtolower((string)$this->request->getParam('prefix'));
+        if ($prefix !== 'admin' && $this->request->getSession()->read('user_type') === 'Teacher_Parent'
+            && \App\Service\SupervisorAgreements::protects(
+                (string)$this->request->getParam('controller'), (string)$this->request->getParam('action'))) {
+            $this->enforceSupervisorAgreement($event);
+            if ($event->isStopped()) {
+                return;
+            }
+        }
+        $schoolStudentAccess = $this->request->getSession()->read('school_student_access');
+        if ($prefix !== 'admin' && $schoolStudentAccess !== null) {
+            $controller = strtolower((string)$this->request->getParam('controller'));
+            $action = strtolower((string)$this->request->getParam('action'));
+            $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+            if ($controller !== 'users' || !in_array($action, ['returntoschool', 'logout'], true)) {
+                $login = $this->userLoginCheck();
+                if ($login !== true) {
+                    $event->setResult($login);
+                    $event->stopPropagation();
+                    return;
+                }
+                if ($controller === 'users' && in_array($action, [
+                    'changepassword', 'studentsetup', 'forgotpassword', 'resetpassword',
+                    'teachersetpassword', 'login', 'registration', 'registerprevdetails', 'logintotest',
+                ], true)) {
+                    throw new \Cake\Http\Exception\ForbiddenException('Password and sign-in actions are unavailable while viewing a student portal. Return to your school account first.');
+                }
+            }
+        }
+        if ($prefix !== 'admin' && $this->request->getSession()->read('user_type') === 'Student') {
+            $controller = strtolower((string)$this->request->getParam('controller'));
+            $action = strtolower((string)$this->request->getParam('action'));
+            if ($controller !== 'users' || !in_array($action, ['login', 'logout', 'studentsetup', 'returntoschool'], true)) {
+                $login = $this->userLoginCheck();
+                if ($login !== true) {
+                    $event->setResult($login);
+                    $event->stopPropagation();
+                    return;
+                }
+            }
+        }
+		if ($prefix === 'admin') {
+			$controller = strtolower((string)$this->request->getParam('controller'));
+			$action = strtolower((string)$this->request->getParam('action'));
+			$publicAdminActions = ['login', 'forgotpassword', 'captcha', 'logout'];
+			$isPublicAdminAction = ($controller === 'admins' && in_array($action, $publicAdminActions, true));
+
+			if (!$isPublicAdminAction && !$this->request->getSession()->read('admin_id')) {
+				$event->setResult($this->redirect(['prefix' => 'Admin', 'controller' => 'admins', 'action' => 'login']));
+				$event->stopPropagation();
+				return;
+			}
+		}
+
 		if ($prefix !== 'admin') {
 			return;
 		}
@@ -210,6 +276,69 @@ class AppController extends Controller{
 		}
 	}
     
+    private function enforceSupervisorAgreement(EventInterface $event): void
+    {
+        $this->loadComponent('Flash');
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        $login = $this->userLoginCheck();
+        if ($login !== true) {
+            $event->setResult($login);
+            $event->stopPropagation();
+            return;
+        }
+        $supervisor = $this->Users->find()->where([
+            'Users.id' => (int)$this->request->getSession()->read('user_id'),
+            'Users.user_type' => 'Teacher_Parent', 'Users.status' => 1, 'Users.activation_status' => 1,
+        ])->first();
+        if (!$supervisor) {
+            throw new \Cake\Http\Exception\ForbiddenException('An active verified supervisor account is required.');
+        }
+        $registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+        $controller = strtolower((string)$this->request->getParam('controller'));
+        $action = strtolower((string)$this->request->getParam('action'));
+        if (($controller === 'conventionregistrations' && in_array($action, ['managestudentevents', 'reviewstudentevents', 'editstudentevent', 'removestudentevent'], true))
+            || ($controller === 'eventsubmissions' && in_array($action, ['submitstudentevent', 'submitgroupevent'], true))
+            || ($controller === 'homes' && $action === 'checkstudentevent')) {
+            $slug = $this->request->getParam('pass.0');
+            if (is_string($slug) && $slug !== '') {
+                $target = $this->fetchTable('Conventionregistrationstudents')->find()
+                    ->select(['conventionregistration_id'])->where(['slug' => $slug])->first();
+                if ($target) {
+                    $registrationId = (int)$target->conventionregistration_id;
+                }
+            }
+        }
+        $ids = $registrationId > 0 ? [$registrationId] : $this->Conventionregistrations->find()
+            ->where(['user_id' => $supervisor->school_id, 'season_id' => $this->getCurrentSeason(), 'status' => 1])
+            ->all()->extract('id')->toList();
+        $service = new \App\Service\SupervisorAgreements($this->Users->getConnection());
+        $reason = null;
+        try {
+            foreach ($ids as $id) {
+                if ($service->pending((int)$supervisor->id, (int)$id)) {
+                    $reason = 'Please accept your supervisor agreement in Notifications before continuing with student convention activities.';
+                    break;
+                }
+            }
+        } catch (\DomainException $error) {
+            $reason = $error->getMessage();
+        }
+        if ($reason !== null) {
+            if ($this->request->is('ajax') || ($this->request->accepts('application/json') && !$this->request->accepts('text/html'))) {
+                $response = $this->getResponse()->withStatus(403)->withType('json')
+                    ->withStringBody(json_encode(['error' => $reason, 'notifications' => \Cake\Routing\Router::url([
+                        'controller' => 'users', 'action' => 'notifications',
+                    ])], JSON_THROW_ON_ERROR));
+            } else {
+                $this->Flash->error($reason);
+                $response = $this->redirect(['controller' => 'users', 'action' => 'notifications'], 303);
+            }
+            $event->setResult($response);
+            $this->setResponse($response);
+            $event->stopPropagation();
+        }
+    }
+
 //  public function beforeFilter(EventInterface $event): void {
 //        $this->set('loggedIn', $this->Auth->loggedIn());
 //    }
@@ -276,7 +405,7 @@ class AppController extends Controller{
 				$dataES->created = date('Y-m-d H:i:s');
 				$dataES->modified = date('Y-m-d H:i:s');
 
-				$resultES = $this->Eventsubmissions->save($dataES);
+				$this->Eventsubmissions->saveOrFail($dataES);
 			}
 			
 			return true;
@@ -593,7 +722,7 @@ class AppController extends Controller{
 		return $dropdown;
 	}
 
-	private function applySlotConstraintsForConflict($conventionSD, $schedulingD, $eventId, $roomId, $playTime, $candidateDate, $candidateStartTime)
+	protected function applySlotConstraintsForConflict($conventionSD, $schedulingD, $eventId, $roomId, $playTime, $candidateDate, $candidateStartTime)
 	{
 		if (empty($schedulingD)) {
 			return ['ok' => false];
@@ -681,6 +810,89 @@ class AppController extends Controller{
 		return ['ok' => false];
 	}
 
+	/**
+	 * Student ids taking part in a schedule row. School rows store school ids in
+	 * user_id/user_id_opponent, so only their group member ids identify students.
+	 */
+	protected function scheduleParticipantIds($row): array
+	{
+		$ids = [];
+		if (($row['user_type'] ?? '') !== 'School') {
+			foreach (['user_id', 'user_id_opponent'] as $field) {
+				if ((int)($row[$field] ?? 0) > 0) {
+					$ids[] = (int)$row[$field];
+				}
+			}
+		}
+		foreach (['group_name_user_ids', 'group_name_opponent_user_ids'] as $field) {
+			foreach (explode(',', (string)($row[$field] ?? '')) as $id) {
+				if ((int)trim($id) > 0) {
+					$ids[] = (int)trim($id);
+				}
+			}
+		}
+
+		return array_values(array_unique($ids));
+	}
+
+	/**
+	 * Stores the student ids of each team on group schedule rows, including
+	 * sequential group events that have no opponent.
+	 */
+	protected function fillScheduleGroupMemberIds($conventionSD): void
+	{
+		$crstudentevents = $this->fetchTable('Crstudentevents');
+		$schedulingtimings = $this->fetchTable('Schedulingtimings');
+		$memberIds = function ($schoolId, $eventId, $groupName) use ($crstudentevents, $conventionSD) {
+			if ((int)$schoolId <= 0 || (string)$groupName === '') {
+				return [];
+			}
+
+			return $crstudentevents->find()
+				->select(['student_id'])
+				->where([
+					'conventionseason_id' => $conventionSD->id,
+					'user_id' => $schoolId,
+					'event_id' => $eventId,
+					'group_name' => $groupName,
+				])
+				->orderBy(['Crstudentevents.id' => 'ASC'])
+				->all()
+				->extract('student_id')
+				->toList();
+		};
+
+		$rows = $schedulingtimings->find()
+			->where([
+				'Schedulingtimings.conventionseasons_id' => $conventionSD->id,
+				'Schedulingtimings.convention_id' => $conventionSD->convention_id,
+				'Schedulingtimings.season_id' => $conventionSD->season_id,
+				'Schedulingtimings.season_year' => $conventionSD->season_year,
+				'Schedulingtimings.user_type' => 'School',
+				'Schedulingtimings.group_name IS NOT' => null,
+				'Schedulingtimings.group_name !=' => '',
+				'Schedulingtimings.user_id >' => 0,
+				'OR' => [['Schedulingtimings.is_bye IS' => null], ['Schedulingtimings.is_bye !=' => 1]],
+			])
+			->orderBy(['Schedulingtimings.id' => 'ASC'])
+			->all();
+
+		foreach ($rows as $row) {
+			$fields = [];
+			$ids = $memberIds($row->user_id, $row->event_id, $row->group_name);
+			if ($ids) {
+				$fields['group_name_user_ids'] = implode(',', $ids);
+			}
+			$opponentIds = $memberIds($row->user_id_opponent, $row->event_id, $row->group_name_opponent);
+			if ($opponentIds) {
+				$fields['group_name_opponent_user_ids'] = implode(',', $opponentIds);
+			}
+			if ($fields) {
+				$schedulingtimings->updateAll($fields, ['id' => $row->id]);
+			}
+		}
+	}
+
 	public function nextBookings($convention_season_slug, $conflict, $base_start_time, $base_finish_time, $base_sch_date_time, $recordId = null, $depth = 0)
 	{
 		if ((int)$depth >= 300) {
@@ -742,6 +954,7 @@ class AppController extends Controller{
 		$nextStartTime = $constraint['start'];
 		$nextFinishTime = $constraint['finish'];
 
+		$schDateOnly = $schDateTime;
 		$schDateTime = $schDateTime . ' ' . $nextStartTime;
 		$conflict['sch_date_time'] = $schDateTime;
 		$conflict['start_time'] = $nextStartTime;
@@ -755,9 +968,9 @@ class AppController extends Controller{
 		$cond = [
 			'conventionseasons_id' => $conventionSD->id,
 			'user_type' => 'Student',
-			'is_bye' => 0,
+			'OR' => [['is_bye IS' => null], ['is_bye' => 0]],
 			'user_id' => $userId,
-			'DATE(sch_date_time) =' => $schDateTime,
+			'DATE(sch_date_time) =' => $schDateOnly,
 			'start_time >' => $nextStartTime,
 		];
 		$nextBooking = $this->Schedulingtimings
@@ -852,7 +1065,7 @@ class AppController extends Controller{
 		$cond = [
 			'conventionseasons_id' => $conventionSD->id,
 			'user_type' => 'Student',
-			'is_bye' => 0,
+			'OR' => [['is_bye IS' => null], ['is_bye' => 0]],
 			'user_id' => $userIdOpponent,
 			'DATE(sch_date_time) =' => $schDateTime,
 			'start_time >' => $finishTime,
@@ -879,7 +1092,7 @@ class AppController extends Controller{
 			Schedulingtimings.season_id = '".$conventionSD->season_id."' AND 
 			Schedulingtimings.season_year = '".$conventionSD->season_year."' AND 
 			Schedulingtimings.user_type = 'Student' AND 
-			Schedulingtimings.is_bye = 0 AND 
+			(Schedulingtimings.is_bye IS NULL OR Schedulingtimings.is_bye = 0) AND 
 			(Schedulingtimings.user_id ='".$userId."' OR Schedulingtimings.user_id_opponent ='".$userId."')
 		)";
 		$userConflictRecords = $this->Schedulingtimings
@@ -1031,7 +1244,7 @@ class AppController extends Controller{
 					);
 				})
 				->andWhere(function ($exp) use ($userId) {
-					return $exp->or_([
+					return $exp->or([
 						$exp->add("FIND_IN_SET($userId, Schedulingtimings.group_name_user_ids)"),
 						$exp->add("FIND_IN_SET($userId, Schedulingtimings.group_name_opponent_user_ids)"),
 					]);
@@ -1117,6 +1330,7 @@ class AppController extends Controller{
 	
 	public function verifyRecatpcha($aData)
 	{
+		\App\Deployment\SafetyPolicy::assertIntegrationAllowed('recaptcha');
 		//echo 'ddddddddd<pre>';pr($aData);exit;
 		if(!$aData)
 		{
@@ -1154,19 +1368,36 @@ class AppController extends Controller{
         if (!empty($userid)) {
             $isExists = $this->Users->find()->where(['Users.id' => $userid, 'Users.activation_status' => 1, 'Users.status' => 1])->select(['id'])->first();
         }
+        if ($isExists && $this->request->getSession()->read('user_type') === 'Student') {
+            try {
+                $portal = new \App\Service\StudentPortalAccounts($this->Users->getConnection());
+                $schoolAccess = $this->request->getSession()->read('school_student_access');
+                $valid = $schoolAccess !== null
+                    ? (is_array($schoolAccess) && (int)($schoolAccess['student_id'] ?? 0) === (int)$userid
+                        && $portal->schoolAccessValid((int)$userid, (int)($schoolAccess['school_id'] ?? 0)))
+                    : $portal->sessionValid((int)$userid, (int)$this->request->getSession()->read('student_portal_version'));
+                if (!$valid) {
+                    $isExists = null;
+                }
+            } catch (\Exception $error) {
+                $this->log('Student session verification failed: ' . $error->getMessage(), 'error');
+                $isExists = null;
+            }
+        }
         if (empty($isExists)) {
             $msgString = "Please Login"; 
             $this->request->getSession()->delete('user_id');
             $this->request->getSession()->delete('email_address');
             $this->request->getSession()->delete('user_type');
             $this->request->getSession()->delete('last_login');
+            $this->request->getSession()->delete('student_portal_version');
+            $this->request->getSession()->delete('school_student_access');
 			
             $this->Flash->error($msgString);
             $this->request->getSession()->write("returnUrl", $returnUrl);
-			throw new \Cake\Http\Exception\RedirectException(
-				\Cake\Routing\Router::url(['controller' => 'users', 'action' => 'login'], true)
-			);
+			return $this->redirect(['controller' => 'users', 'action' => 'login']);
         }
+		return true;
     }
 	
 	// to check subscribers type login
@@ -1295,20 +1526,8 @@ class AppController extends Controller{
 	}
 	
 	public function getByePlayerScheduling($total_students) {
-		$total_students = (int)$total_students;
-		if ($total_students <= 2) {
-			return 0;
-		}
-
-		// Standard single-elimination BYE count:
-		// BYEs = nextPowerOfTwo(total_students) - total_students
-		$nextPower = 1;
-		while ($nextPower < $total_students) {
-			$nextPower *= 2;
-		}
-
-		$byeTeamCount = $nextPower - $total_students;
-		return max(0, (int)$byeTeamCount);
+		// BYEs = nextPowerOfTwo(n) - n; a lone entrant gets one bye (walkover).
+		return \App\Scheduling\KnockoutBracketPlanner::byeCount((int)$total_students);
 	}
 	
 	public function clearSchedulingtimings($convention_season_slug=NULL)
@@ -1318,6 +1537,7 @@ class AppController extends Controller{
 			$conventionSD = $this->Conventionseasons->find()->where(['Conventionseasons.slug' => $convention_season_slug])->contain(["Conventions"])->first();
 			//$this->prx($conventionSD);
 			
+			(new \App\Scheduling\JudgeScheduleGate($this->Conventionseasons->getConnection()))->clear((int)$conventionSD->id);
 			$this->Schedulingtimings->deleteAll(["conventionseasons_id" => $conventionSD->id, "convention_id" => $conventionSD->convention_id, "season_id" => $conventionSD->season_id, "season_year" => $conventionSD->season_year]);
 		}
 		

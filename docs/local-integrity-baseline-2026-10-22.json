@@ -1,0 +1,290 @@
+{
+    "baseline_type": "new deterministic read-only baseline; not comparable to unrecovered Phase C serialization",
+    "method": "ACP-DB-FINGERPRINT-V1",
+    "generated_at_utc": "2026-10-22T01:09:32Z",
+    "database": "convention_acp_demo_test",
+    "season_26": {
+        "conventionseason_id": 26,
+        "convention_id": 7,
+        "season_id": 7,
+        "season_year": 2026,
+        "results_release": 1,
+        "scheduling_rows": 1869,
+        "canonical_timing_sha1": "68f7759f515af2ea88eefb2e0d3d02f60095041b"
+    },
+    "tables": {
+        "schedulingtimings": {
+            "rows": 4249,
+            "columns": [
+                "id",
+                "schedule_category",
+                "conventionseasons_id",
+                "convention_id",
+                "season_id",
+                "season_year",
+                "conventionregistration_id",
+                "event_id",
+                "event_id_number",
+                "user_type",
+                "user_id",
+                "group_name",
+                "group_name_user_ids",
+                "room_id",
+                "sch_date_time",
+                "day",
+                "start_time",
+                "finish_time",
+                "user_id_opponent",
+                "schtimeautoid1",
+                "schtimeautoid2",
+                "round_number",
+                "match_number",
+                "is_bye",
+                "group_name_opponent",
+                "group_name_opponent_user_ids",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "5b78c18dbf5d15dbac9176f005903798c026b894758592aefa57a749c506ce3b"
+        },
+        "conventionseasons": {
+            "rows": 22,
+            "columns": [
+                "id",
+                "results_release"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "281bff40b19f07b383be8133c0ab1c729c983cfb6684bda0a3fbce0ce7f581cc"
+        },
+        "conventionregistrations": {
+            "rows": 880,
+            "columns": [
+                "id",
+                "slug",
+                "conventionseason_id",
+                "convention_id",
+                "user_id",
+                "season_id",
+                "season_year",
+                "price_structure",
+                "price_per_student",
+                "judges_event_ids",
+                "status",
+                "created",
+                "modified",
+                "interest_event_ids"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "0c852b5eff2ff6ac13a695f6db716dc6f1d01be2ab1fb4e81b335f55e783e104"
+        },
+        "conventionregistrationstudents": {
+            "rows": 3106,
+            "columns": [
+                "id",
+                "slug",
+                "conventionregistration_id",
+                "convention_id",
+                "user_id",
+                "season_id",
+                "season_year",
+                "student_id",
+                "teacher_parent_id",
+                "event_ids",
+                "status",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "3774db786c8534f627c241b393a27f4e969122d0f4a07a086895f41715fda992"
+        },
+        "crstudentevents": {
+            "rows": 36968,
+            "columns": [
+                "id",
+                "slug",
+                "conventionregistration_id",
+                "conventionseason_id",
+                "convention_id",
+                "user_id",
+                "season_id",
+                "season_year",
+                "student_id",
+                "event_id",
+                "event_id_number",
+                "group_name",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "9350a3e499ecad57ad1caf678b5aa07637c66af5e0182218958f2b9bd2ee47bc"
+        },
+        "eventsubmissions": {
+            "rows": 33261,
+            "columns": [
+                "id",
+                "slug",
+                "conventionregistration_id",
+                "conventionseason_id",
+                "convention_id",
+                "user_id",
+                "season_id",
+                "season_year",
+                "event_id",
+                "event_id_number",
+                "group_name",
+                "student_id",
+                "mediafile_original_file_name",
+                "mediafile_file_system_name",
+                "report",
+                "score_sheet",
+                "additional_documents",
+                "context_box",
+                "uploaded_by_user_id",
+                "guideline_breach",
+                "guideline_breach_by_judge_id",
+                "guideline_breach_reason",
+                "command_performance",
+                "mark_command_by_judge_id",
+                "command_performance_reason",
+                "book_ids",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "5bf7f3552162723d9c2b35094d1cd443e97062955be4b521c49f4cb662140b7a"
+        },
+        "judgeevaluations": {
+            "rows": 37142,
+            "columns": [
+                "id",
+                "slug",
+                "eventsubmission_id",
+                "conventionregistration_id",
+                "conventionseason_id",
+                "convention_id",
+                "season_id",
+                "season_year",
+                "event_id",
+                "event_id_number",
+                "group_name",
+                "student_id",
+                "user_id",
+                "uploaded_by_user_id",
+                "evaluationform_id",
+                "division_ids",
+                "tag_ids",
+                "total_marks_possible",
+                "total_marks_obtained",
+                "total_negative_marks_possible",
+                "total_negative_marks_obtained",
+                "comments",
+                "time_score",
+                "distance_score",
+                "distance_attempt_1",
+                "distance_attempt_2",
+                "distance_attempt_3",
+                "pos_1_yes_no",
+                "pos_1_score",
+                "pos_2_yes_no",
+                "pos_2_score",
+                "pos_3_yes_no",
+                "pos_3_score",
+                "pos_4_yes_no",
+                "pos_4_score",
+                "pos_5_yes_no",
+                "pos_5_score",
+                "pos_6_yes_no",
+                "pos_6_score",
+                "pos_7_yes_no",
+                "pos_7_score",
+                "pos_8_yes_no",
+                "pos_8_score",
+                "pos_9_yes_no",
+                "pos_9_score",
+                "comp_choice_pos_1",
+                "comp_choice_pos_1_score",
+                "comp_choice_pos_2",
+                "comp_choice_pos_2_score",
+                "comp_choice_pos_3",
+                "comp_choice_pos_3_score",
+                "all_pos_score",
+                "place",
+                "withdraw_yes_no",
+                "did_not_attend",
+                "soccer_kick_best_kick",
+                "soccer_kick_all_kicks",
+                "spelling_score",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "770877296e8ebac0b075434047049c33ed50a23ae3567259e5273994e069f28a"
+        },
+        "results": {
+            "rows": 2682,
+            "columns": [
+                "id",
+                "slug",
+                "conventionseason_id",
+                "convention_id",
+                "season_id",
+                "season_year",
+                "event_id",
+                "event_id_number",
+                "division_id",
+                "original_results_modified",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "d82cd7045e74d7bd9c3390f8ab6c993209a95b6e2efd8869c2f021d2622f1bc2"
+        },
+        "resultpositions": {
+            "rows": 28682,
+            "columns": [
+                "id",
+                "slug",
+                "result_id",
+                "eventsubmission_id",
+                "conventionregistration_id",
+                "conventionseason_id",
+                "convention_id",
+                "user_id",
+                "season_id",
+                "season_year",
+                "event_id",
+                "event_id_number",
+                "division_id",
+                "group_name",
+                "student_id",
+                "gender",
+                "position",
+                "avg_marks",
+                "points_obtained",
+                "created",
+                "modified"
+            ],
+            "primary_key_order": [
+                "id"
+            ],
+            "sha256": "d696cb67eae164a035ee3e9ba0abee3dfe3d8b86770cd4848ca796d054bb3a30"
+        }
+    }
+}

@@ -77,6 +77,9 @@ class EventsController extends AppController {
                 $division_id = trim($this->request->getData()['Events']['division_id']);
             }
 			
+        } elseif ($this->request->getQuery('keyword') !== null || $this->request->getQuery('division_id') !== null) {
+            $keyword = trim((string)$this->request->getQuery('keyword', ''));
+            $division_id = trim((string)$this->request->getQuery('division_id', ''));
         } elseif ($this->request->getParam('pass')) {
             if (isset($this->request->getParam('pass', [])[0]) && $this->request->getParam('pass', [])[0] != '') {
                 $searchArr = $this->request->getParam('pass', []);
@@ -103,13 +106,117 @@ class EventsController extends AppController {
         //pr($condition);exit;
         $separator = implode("/", $separator);
         $this->set('separator', $separator);
-        $this->paginate = ['contain' => ['Divisions'], 'conditions' => $condition, 'limit' => 50, 'order' => ['Events.event_id_number' => 'ASC']];
-        $this->set('events', $this->paginate($this->Events));
+        $eventsQuery = $this->Events->find()
+            ->contain(['Divisions'])
+            ->where($condition)
+            ->orderBy(['Events.event_id_number' => 'ASC']);
+        $this->set('events', $this->paginate($eventsQuery, ['limit' => 50]));
         if ($this->request->is("ajax")) {
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplatePath('Element' . DS . 'Admin/Events');
             $this->render('index');
         }
+    }
+
+    public function qualifyingrecords()
+    {
+        $this->set('title', ADMIN_TITLE . 'Qualifying Times & Records');
+        $this->viewBuilder()->setLayout('admin');
+        $this->set('manageEvents', '1');
+        $this->set('manageGlobalQualifyingRecords', '1');
+
+        $eventsQuery = $this->Events->find()
+            ->where(['Events.event_judging_type IN' => ['times', 'distances', 'scores']])
+            ->orderBy(['Events.event_id_number' => 'ASC']);
+        $this->set('events', $this->paginate($eventsQuery, ['limit' => 50]));
+    }
+
+    public function qualifyingdata($slug = null)
+    {
+        $event = $this->Events->find()
+            ->where(['Events.slug' => $slug])
+            ->first();
+        if (!$event || !in_array($event->event_judging_type, ['times', 'distances', 'scores'], true)) {
+            $this->Flash->error('Qualifying settings were not found for this event.');
+            return $this->redirect(['controller' => 'events', 'action' => 'qualifyingrecords']);
+        }
+
+        $this->set('title', ADMIN_TITLE . 'Qualifying Times & Records - ' . $event->event_name);
+        $this->viewBuilder()->setLayout('admin');
+        $this->set('manageEvents', '1');
+        $this->set('manageGlobalQualifyingRecords', '1');
+
+        if ($this->request->is(['post', 'put'])) {
+            $qualifyingTime = null;
+            $qualifyingDistance = null;
+            $qualifyingScore = null;
+            $fieldName = match ($event->event_judging_type) {
+                'times' => 'qualifying_time_score',
+                'distances' => 'qualifying_distance',
+                'scores' => 'qualifying_score',
+            };
+            $value = trim((string)$this->request->getData($fieldName, ''));
+            $currentRecord = trim((string)$this->request->getData('current_record', ''));
+            $validationError = null;
+
+            if ($value !== '' && $event->event_judging_type === 'times') {
+                if (!preg_match('/^(\d{1,3}):[0-5]\d:[0-5]\d(?:\.\d{1,6})?$/', $value, $timeParts) || (int)$timeParts[1] > 838) {
+                    $validationError = 'Enter qualifying time as HH:MM:SS or HH:MM:SS.milliseconds (for example, 00:01:13.000).';
+                } else {
+                    $qualifyingTime = $value;
+                }
+            } elseif ($value !== '' && $event->event_judging_type === 'distances') {
+                if (!is_numeric($value)) {
+                    $validationError = 'Enter a valid qualifying distance in meters.';
+                } else {
+                    $qualifyingDistance = $value;
+                }
+            } elseif ($value !== '' && $event->event_judging_type === 'scores') {
+                if (!preg_match('/^-?\d+$/', $value)) {
+                    $validationError = 'Enter a whole-number qualifying score.';
+                } else {
+                    $qualifyingScore = (int)$value;
+                }
+            }
+
+            if (mb_strlen($currentRecord) > 255) {
+                $validationError = 'Current record must be 255 characters or fewer.';
+            }
+
+            if ($validationError !== null) {
+                $this->Flash->error($validationError);
+            } else {
+                $event->qualifying_time_score = $qualifyingTime;
+                $event->qualifying_distance = $qualifyingDistance;
+                $event->qualifying_score = $qualifyingScore;
+                $event->current_record = $currentRecord !== '' ? $currentRecord : null;
+
+                $seasonValues = [
+                    'qualifying_time_score' => $qualifyingTime,
+                    'qualifying_distance' => $qualifyingDistance,
+                    'qualifying_score' => $qualifyingScore,
+                    'current_record' => $currentRecord !== '' ? $currentRecord : null,
+                ];
+                $saved = $this->Events->getConnection()->transactional(function () use ($event, $seasonValues) {
+                    if (!$this->Events->save($event)) {
+                        return false;
+                    }
+                    $this->Conventionseasonevents->updateAll($seasonValues, [
+                        'Conventionseasonevents.event_id' => $event->id,
+                    ]);
+                    return true;
+                });
+
+                if (!$saved) {
+                    $this->Flash->error('Qualifying settings could not be saved.');
+                } else {
+                    $this->Flash->success('Qualifying settings saved and applied to all convention seasons for this event.');
+                    return $this->redirect(['controller' => 'events', 'action' => 'qualifyingdata', $event->slug]);
+                }
+            }
+        }
+
+        $this->set('event', $event);
     }
 
     public function activateevent($slug = null) {

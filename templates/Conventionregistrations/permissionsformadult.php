@@ -102,8 +102,9 @@
 
 <div class="pf-print-page">
 	<div class="pf-toolbar">
-		<button type="submit" class="btn btn-primary" form="adult-permission-form"><i class="fa fa-check-circle"></i> Submit Form</button>
+		<button type="button" class="btn btn-primary" onclick="window.print()"><i class="fa fa-print"></i> Print preview</button>
 	</div>
+	<p><strong>Preview only:</strong> Adult approvals are not available. This page does not submit or sign a form.</p>
 	<?php
 	$schoolName = '';
 	if (!empty($userDetails->school_name)) {
@@ -119,10 +120,12 @@
 	}
 
 	$customerCode = !empty($userDetails->customer_code) ? $userDetails->customer_code : '';
-	$today = date('d/m/Y');
-	$formRows = !empty($adultForms) ? $adultForms : [['supervisor' => null, 'assignedStudents' => []]];
+	$formRows = $adultForms ?? [];
 	?>
 
+	<?php if (!$formRows): ?>
+		<p>No supervisors are registered for this convention.</p>
+	<?php endif; ?>
 	<?php foreach ($formRows as $formIndex => $formRow): ?>
 		<?php
 		$supervisor = !empty($formRow['supervisor']) ? $formRow['supervisor'] : null;
@@ -134,7 +137,7 @@
 		if (!empty($supervisor)) {
 			$supervisorName = trim(($supervisor->first_name ?? '') . ' ' . ($supervisor->middle_name ?? '') . ' ' . ($supervisor->last_name ?? ''));
 			$supervisorGender = strtoupper((string)($supervisor->gender ?? ''));
-			$supervisorPhone = !empty($supervisor->phone_no) ? $supervisor->phone_no : (!empty($supervisor->mobile_no) ? $supervisor->mobile_no : '');
+			$supervisorPhone = !empty($supervisor->phone) ? $supervisor->phone : (!empty($supervisor->phone2) ? $supervisor->phone2 : '');
 		}
 
 		$isMale = in_array($supervisorGender, ['M', 'MALE'], true);
@@ -146,7 +149,8 @@
 			<div class="pf-form-break"></div>
 		<?php endif; ?>
 
-		<form id="adult-permission-form" method="post" action="#">
+		<div>
+			<fieldset disabled>
 			<h1 class="pf-title">Adult Registration Form</h1>
 			<p class="pf-sub">(Please tick the appropriate boxes)</p>
 			<p class="pf-supervisor-line">Supervisor <?php echo (int)($formIndex + 1); ?> of <?php echo (int)count($formRows); ?></p>
@@ -154,8 +158,8 @@
 			<table class="pf-table">
 				<tr>
 					<th style="width:140px;">Name:</th>
-					<td><input type="text" class="pf-input" value="<?php echo h($supervisorName); ?>"></td>
-					<th style="width:120px;"><label><input type="checkbox" checked> Over 21</label></th>
+					<td><input type="text" class="pf-input" readonly value="<?php echo h($supervisorName); ?>"></td>
+					<th style="width:120px;"><label><input type="checkbox"> Over 21</label></th>
 					<th style="width:120px;"><label><input type="checkbox" <?php echo $isMale ? 'checked' : ''; ?>> Male</label> <label><input type="checkbox" <?php echo $isFemale ? 'checked' : ''; ?>> Female</label></th>
 				</tr>
 				<tr>
@@ -220,7 +224,7 @@
 						}
 
 						if (!empty($student->birth_year) && is_numeric($student->birth_year)) {
-							$studentAge = (string)(date('Y') - (int)$student->birth_year);
+							$studentAge = (string)((int)$conventionRegD->season_year - (int)$student->birth_year);
 						}
 					}
 					?>
@@ -235,58 +239,12 @@
 			<table class="pf-table">
 				<tr>
 					<th style="width:160px;">Signature:</th>
-					<td><input type="text" class="pf-input" value="<?php echo h($supervisorName); ?>"></td>
+					<td><input type="text" class="pf-input" value=""></td>
 					<th style="width:80px;">Date:</th>
-					<td style="width:180px;"><input type="text" class="pf-input" value="<?php echo h($today); ?>"></td>
+					<td style="width:180px;"><input type="text" class="pf-input" value=""></td>
 				</tr>
 			</table>
-		</form>
+			</fieldset>
+		</div>
 	<?php endforeach; ?>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-	var adultForm = document.getElementById('adult-permission-form');
-	if (!adultForm) {
-		return;
-	}
-
-	adultForm.addEventListener('submit', function (event) {
-		event.preventDefault();
-
-		var storageKey = 'acp_permission_form_submissions';
-		var counts = {};
-		try {
-			counts = JSON.parse(localStorage.getItem(storageKey) || '{}');
-		} catch (error) {
-			counts = {};
-		}
-
-		var existingCount = parseInt(counts.adult_registration, 10) || 0;
-		var nextCount = existingCount + 1;
-		counts.adult_registration = nextCount;
-		localStorage.setItem(storageKey, JSON.stringify(counts));
-
-		if (window.opener && !window.opener.closed) {
-			window.opener.dispatchEvent(new window.opener.CustomEvent('permissionFormSubmitted', {
-				detail: {
-					formKey: 'adult_registration',
-					count: nextCount
-				}
-			}));
-		}
-
-		var message = document.createElement('div');
-		message.className = 'pf-submit-confirmation';
-		message.textContent = 'Form submitted successfully.';
-		message.style.cssText = 'margin-top: 12px; background: #e9f9ef; border: 1px solid #bfe6ce; color: #246b3a; padding: 10px 12px; border-radius: 8px; font-weight: 600;';
-		adultForm.appendChild(message);
-
-		setTimeout(function () {
-			if (window && window.close) {
-				window.close();
-			}
-		}, 700);
-	});
-});
-</script>

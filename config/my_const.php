@@ -126,6 +126,7 @@ define('PAYPAL_MODE', 'Live'); // options 1. Sandbox  2. Live
 // changed here 12-feb-2024
 global $priceStructureCR;
 $priceStructureCR = array(
+    'judge_registration' => 'Judges Registration',
     'full_registration' => 'Full Registration',
 	'scripture_only_registration' => 'Scripture only registration',
 	'student_registration_fees' => 'Student registration',
@@ -139,6 +140,7 @@ $paymentStatus = array(
 	'1' => 'Confirmed',
 	'2' => 'Pending',
 	'3' => 'Invoiced',
+	'4' => 'Cancelled',
 );
 
 global $romanNumbers;

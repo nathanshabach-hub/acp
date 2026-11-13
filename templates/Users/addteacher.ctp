@@ -10,8 +10,6 @@ $(document).ready(function () {
 		
 		<div class="ersu_message"> <?php echo $this->Flash->render() ?></div>
 		
-			<h2 class="mt-3">Add Supervisors Info</h2>
-			  
 			<!-- dashboard-section-3 start-->
 			<div class="dashboard-form">
 				<h2 class="form-title">Add Supervisors Info</h2>

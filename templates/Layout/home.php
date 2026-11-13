@@ -1,3 +1,7 @@
+<?php
+$isUserPortal = $this->request->getSession()->read('user_id') > 0
+	&& in_array($this->request->getSession()->read('user_type'), ['School', 'Student', 'Teacher_Parent', 'Judge'], true);
+?>
 <!doctype html>
 <html lang="en">
 
@@ -16,25 +20,29 @@
 		integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
 		crossorigin="anonymous" referrerpolicy="no-referrer" />
 	<?php echo $this->Html->css('front/bootstrap.min.css'); ?>
-	<?php echo $this->Html->css('front/style_front.css?v=20261006a'); ?>
+	<?php echo $this->Html->css('front/style_front.css?v=20261110a'); ?>
 	<?php echo $this->Html->css('front/responsive.css?v=20260826e'); ?>
 	<?php echo $this->Html->css('front/forms.css?v=20260918c'); ?>
 	<?php echo $this->Html->css('front/font-awesome.min.css'); ?>
+	<?php if ($isUserPortal) { echo $this->Html->css('front/portal.css?v=20261113b'); } ?>
 	<?php echo $this->Html->script('front/jquery.min.js'); ?>
 	<?php echo $this->Html->script('front/validate.js'); ?>
 </head>
 
-<body>
+<body class="<?= $isUserPortal ? 'user-portal' : '' ?>">
 	<!-- Header Start -->
-	<?php echo $this->element('header'); ?>
+	<?php echo $this->element($isUserPortal ? 'portal_header' : 'header'); ?>
+    <?= $this->element('school_student_access_banner') ?>
 	<!-- Header End -->
 
 	<!-- Middle content Start -->
+	<?php if ($isUserPortal) { ?><div id="portal-content" tabindex="-1"><?php } ?>
 	<?php echo $this->fetch('content'); ?>
+	<?php if ($isUserPortal) { ?></div><?php } ?>
 	<!-- Middle content End -->
 
 	<!-- Footer Start -->
-	<?php echo $this->element('footer'); ?>
+	<?php echo $this->element($isUserPortal ? 'portal_footer' : 'footer'); ?>
 	<!-- Footer End -->
 
 	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
@@ -51,6 +59,9 @@
 	</script>
 	<script>
 		$(document).ready(function () {
+			if ($("body").hasClass("user-portal")) {
+				return;
+			}
 			var sidebarStateKey = "acpUserSidebarHidden";
 			var mobileSidebarMaxWidth = 767;
 
@@ -233,6 +244,7 @@
 <button id="acp-install-btn" style="display:none;position:fixed;bottom:56px;right:18px;z-index:9999;background:#1c2452;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.22);">📲 Install App</button>
 
 <script src="<?php echo HTTP_PATH; ?>/js/acp-pwa.js"></script>
+<?php if ($isUserPortal) { echo $this->Html->script('front/portal.js?v=20261109c'); } ?>
 </body>
 
 </html>
