@@ -10,10 +10,13 @@ use Cake\Utility\Security;
 use App\Utility\LegacyEmail as Email;
 use App\Service\ResultPackageAccess;
 use App\Service\ResultExportToken;
+use App\Service\EvaluationDownloads;
+use App\Service\EvaluationBatchExport;
 use App\Service\GuidelineBreachPolicy;
 use App\Service\SupervisorAssignmentPolicy;
 use App\Service\CrossSchoolSponsorship;
 use Cake\I18n\I18n;
+use App\Service\PermissionFormSubmissions;
 
 #[\AllowDynamicProperties]
 class ConventionregistrationsController extends AppController {
@@ -804,7 +807,147 @@ class ConventionregistrationsController extends AppController {
         }
     }
 	
+    public function evaluationdownloads()
+    {
+        $this->request->allowMethod(['get']);
+        [$schoolId, $registration] = $this->evaluationDownloadContext();
+        $this->viewBuilder()->setLayout('home');
+        $this->set('title_for_layout', 'Judges Evaluations' . TITLE_FOR_PAGES);
+        $students = [];
+        $storageError = null;
+        try {
+            $students = (new EvaluationDownloads($this->Conventionregistrations->getConnection()))
+                ->roster((int)$registration->id);
+        } catch (\DomainException $error) {
+            $storageError = $error->getMessage();
+        }
+        $this->set(compact('students', 'registration', 'storageError'));
+    }
+
+    public function prepareevaluationdownload()
+    {
+        $this->request->allowMethod(['post']);
+        [$schoolId, $registration] = $this->evaluationDownloadContext();
+        $downloads = new EvaluationDownloads($this->Conventionregistrations->getConnection());
+        try {
+            $students = $downloads->select((int)$registration->id, $this->request->getData('student_ids'));
+        } catch (\DomainException $error) {
+            return $this->evaluationDownloadJson(['error' => $error->getMessage()], 422);
+        }
+        $lock = null;
+        $directory = $this->createResultExportDirectory($lock);
+        if ($directory === null) {
+            $this->log('Could not prepare temporary storage for evaluation downloads.', 'error');
+            return $this->evaluationDownloadJson(['error' => 'Could not prepare storage for this download. Please try again.'], 500);
+        }
+        $downloadToken = ResultExportToken::create();
+        $expires = time() + 3600;
+        $zipName = 'judges-evaluations.zip';
+        $metadata = [
+            'zip_name' => $zipName,
+            'export_dir' => $directory,
+            'expires' => $expires,
+            'school_id' => $schoolId,
+            'registration_id' => (int)$registration->id,
+            'conventionseason_id' => (int)$registration->conventionseason_id,
+            'evaluation_batch' => true,
+        ];
+        $metadata['signature'] = ResultExportToken::signature(
+            $downloadToken, $schoolId, (int)$registration->id,
+            (int)$registration->conventionseason_id, $expires, $zipName, $directory,
+        );
+        $sessionTokens = $this->pruneResultExportTokens();
+        $sessionTokens[$downloadToken] = $metadata;
+        $this->request->getSession()->write('downloadallresults_tokens', $sessionTokens);
+        $stream = new \Cake\Http\CallbackStream(function () use ($downloads, $students, $schoolId, $registration, $directory, $lock, $downloadToken): void {
+            $ready = false;
+            $send = static function (array $event): void {
+                echo json_encode($event, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
+                if (ob_get_level() > 0 && (ob_get_status()['flags'] & PHP_OUTPUT_HANDLER_FLUSHABLE)) {
+                    ob_flush();
+                }
+                flush();
+            };
+            try {
+                set_time_limit(360);
+                while (ob_get_level() > 0) {
+                    if (!(ob_get_status()['flags'] & PHP_OUTPUT_HANDLER_REMOVABLE) || !ob_end_flush()) {
+                        throw new \RuntimeException('Server output buffering prevents live evaluation progress.');
+                    }
+                }
+                $send(['type' => 'start', 'total' => count($students)]);
+                $zipPath = (new EvaluationBatchExport())->generate($students, $this->request, $directory, $send);
+                $batchToken = $downloads->prepared($schoolId, (int)$registration->id, array_column($students, 'id'));
+                flock($lock, LOCK_UN);
+                fclose($lock);
+                $ready = true;
+                $send([
+                    'type' => 'ready', 'batch_token' => $batchToken, 'bytes' => filesize($zipPath),
+                    'download_url' => $this->request->getAttribute('webroot')
+                        . 'conventionregistrations/downloadallresultsfile/' . $downloadToken,
+                ]);
+            } catch (\DomainException $error) {
+                $send(['type' => 'error', 'message' => $error->getMessage()]);
+            } catch (\RuntimeException $error) {
+                $this->log('Evaluation batch export failed: ' . $error->getMessage(), 'error');
+                $send(['type' => 'error', 'message' => 'Could not generate the evaluation ZIP. No students were marked complete. Please try again or contact the events team.']);
+            } finally {
+                if (is_resource($lock)) {
+                    flock($lock, LOCK_UN);
+                    fclose($lock);
+                }
+                if (!$ready && $directory !== null && !$this->cleanupResultExportDirectory($directory)) {
+                    $this->log('Could not remove temporary evaluation export directory: ' . $directory, 'warning');
+                }
+            }
+        });
+        return $this->getResponse()
+            ->withHeader('Content-Type', 'application/x-ndjson; charset=UTF-8')
+            ->withHeader('Cache-Control', 'private, no-store, no-transform, max-age=0')
+            ->withHeader('X-Accel-Buffering', 'no')
+            ->withHeader('X-Content-Type-Options', 'nosniff')
+            ->withBody($stream);
+    }
+
+    public function completeevaluationdownload()
+    {
+        $this->request->allowMethod(['post']);
+        [$schoolId, $registration] = $this->evaluationDownloadContext();
+        try {
+            $count = (new EvaluationDownloads($this->Conventionregistrations->getConnection()))
+                ->complete($schoolId, (int)$registration->id, (string)$this->request->getData('token'));
+        } catch (\DomainException $error) {
+            return $this->evaluationDownloadJson(['error' => $error->getMessage()], 422);
+        }
+        $this->Flash->success('Download complete for ' . $count . ' student(s). The next available students are selected.');
+        return $this->evaluationDownloadJson(['completed' => $count]);
+    }
+
+    private function evaluationDownloadContext(): array
+    {
+        $this->setResponse($this->getResponse()
+            ->withHeader('Cache-Control', 'private, no-store, max-age=0')
+            ->withHeader('Pragma', 'no-cache'));
+        $schoolId = $this->activeResultExportSchoolId();
+        $registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+        $registration = $schoolId !== null
+            ? $this->publishedOwnedResultRegistration($registrationId, $schoolId) : null;
+        if ($registration === null) {
+            throw new \Cake\Http\Exception\NotFoundException('Evaluation downloads are unavailable for this registration.');
+        }
+        return [$schoolId, $registration];
+    }
+
+    private function evaluationDownloadJson(array $data, int $status = 200): \Cake\Http\Response
+    {
+        return $this->getResponse()->withStatus($status)->withType('application/json')
+            ->withStringBody(json_encode($data, JSON_THROW_ON_ERROR));
+    }
+
 	public function downloadallresults() {
+        if ((string)$this->request->getQuery('package') === 'judges-evaluations') {
+            return $this->redirect(['action' => 'evaluationdownloads']);
+        }
 		$helperServerPid = 0;
 		$exportLockHandle = null;
 		try {
@@ -1129,6 +1272,13 @@ class ConventionregistrationsController extends AppController {
 
 		unset($sessionTokens[$token]);
 		$this->request->getSession()->write('downloadallresults_tokens', $sessionTokens);
+
+        if (!empty($tokenMeta['evaluation_batch'])) {
+            if (!$this->cleanupResultExportDirectory($tmpRoot)) {
+                $this->log('Could not remove downloaded evaluation export directory: ' . $tmpRoot, 'warning');
+            }
+            $this->response = $this->response->withHeader('Content-Length', (string)strlen($zipBody));
+        }
 
 		return $this->response
 			->withType('application/zip')
@@ -4412,6 +4562,7 @@ class ConventionregistrationsController extends AppController {
 
 		$this->set("title_for_layout", "Permission Forms" . TITLE_FOR_PAGES);
 		$this->viewBuilder()->setLayout('home');
+		$this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
 
 		$this->set('active_cr_permissionforms','active');
 
@@ -4427,6 +4578,55 @@ class ConventionregistrationsController extends AppController {
 			$this->Flash->error('Please choose convention registration first.');
 			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
 		}
+		$registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+		$this->set('permissionFormSubmissions', (new PermissionFormSubmissions())->forRegistration($registrationId));
+	}
+
+	public function permissionsformsubmit() {
+		$this->userLoginCheck();
+		$this->multiLoginCheck(['School']);
+		$this->request->allowMethod(['post']);
+		$this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+
+		$userId = (int)$this->request->getSession()->read('user_id');
+		$registrationId = (int)$this->request->getSession()->read('sess_selected_convention_registration_id');
+		$registration = $this->Conventionregistrations->find()
+			->where([
+				'Conventionregistrations.id' => $registrationId,
+				'Conventionregistrations.user_id' => $userId,
+			])
+			->contain(['Users'])
+			->first();
+		if (!$registration) {
+			$this->Flash->error('Please choose an owned convention registration first.');
+			return $this->redirect(['controller' => 'users', 'action' => 'dashboard']);
+		}
+
+		$uploadedFile = $this->request->getUploadedFile('permission_form');
+		if (!$uploadedFile instanceof \Psr\Http\Message\UploadedFileInterface) {
+			$this->Flash->error('Please select a PDF permission form to submit.');
+			return $this->redirect(['action' => 'permissionsforms']);
+		}
+		$formType = (string)$this->request->getData('form_type');
+		$schoolName = trim((string)($registration->Users->school_name ?? $registration->Users->first_name ?? 'School'));
+		try {
+			(new PermissionFormSubmissions())->submit(
+				$uploadedFile,
+				$formType,
+				$userId,
+				$registrationId,
+				(int)$registration->conventionseason_id,
+				$schoolName
+			);
+			$this->Flash->success('Permission form submitted successfully.');
+		} catch (\InvalidArgumentException $exception) {
+			$this->Flash->error($exception->getMessage());
+		} catch (\RuntimeException $exception) {
+			$this->log($exception->getMessage(), 'error');
+			$this->Flash->error('The permission form could not be saved. Please contact support.');
+		}
+
+		return $this->redirect(['action' => 'permissionsforms']);
 	}
 
 	public function permissionsformhssp() {

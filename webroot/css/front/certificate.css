@@ -1,0 +1,179 @@
+.certificate,
+.certificate * {
+    box-sizing: border-box;
+}
+
+.certificate {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 297 / 210;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    isolation: isolate;
+    background: #fff !important;
+    color: #111;
+    font-family: Arial, "Open Sans", sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.15;
+    text-align: center;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
+.certificate .certificate-art {
+    position: absolute;
+    z-index: -1;
+    display: block;
+    width: 100%;
+    height: auto;
+    left: 0;
+}
+
+.certificate-header {
+    top: 0;
+}
+
+.certificate-footer {
+    bottom: 0;
+}
+
+.certificate-content {
+    position: absolute;
+    top: 35%;
+    right: 7%;
+    left: 7%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    color: inherit;
+    text-align: center;
+}
+
+.certificate-content > * {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    color: #111;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: 1.15;
+    letter-spacing: normal;
+    overflow-wrap: anywhere;
+}
+
+.certificate-content .issuer,
+.certificate-content .award-intro {
+    font-size: clamp(10px, 1.3vw, 14px);
+}
+
+.certificate-content .affiliation {
+    margin: 5px 0;
+    font-size: clamp(9px, 1.2vw, 13px);
+}
+
+.certificate-content .organization {
+    padding: 2px 0;
+    font-size: clamp(18px, 2.5vw, 30px);
+}
+
+.certificate-content .recipient,
+.certificate-content .school,
+.certificate-content .convention {
+    font-family: "Pinyon Script", "Brush Script MT", cursive;
+    font-style: italic;
+    font-weight: 400;
+}
+
+.certificate-content .recipient {
+    margin-top: 10px;
+    font-size: clamp(19px, 2.3vw, 28px) !important;
+}
+
+.certificate-content .school {
+    margin-top: 10px;
+    font-size: clamp(17px, 2.1vw, 25px) !important;
+}
+
+.certificate-content .of-school {
+    font-size: clamp(9px, 1.1vw, 12px);
+}
+
+.certificate-content .placement {
+    padding-top: 3px;
+    font-size: clamp(11px, 1.45vw, 16px);
+}
+
+.certificate-content .convention {
+    margin-top: 10px;
+    font-size: clamp(22px, 3vw, 36px) !important;
+}
+
+.certificate sup {
+    position: relative;
+    top: -0.5em;
+    font-size: 75%;
+    line-height: 0;
+    vertical-align: baseline;
+}
+
+.certificate-signature {
+    position: absolute;
+    bottom: 14%;
+    left: 15%;
+    width: min(22%, 220px);
+    text-align: center;
+}
+
+.certificate-signature img {
+    display: block;
+    width: 52px;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto -2px;
+}
+
+.certificate-signature strong,
+.certificate-signature span {
+    display: block;
+    line-height: 1.25;
+}
+
+.certificate-signature strong {
+    font-size: clamp(9px, 1vw, 11px);
+}
+
+.certificate-signature span {
+    font-size: clamp(8px, 0.85vw, 10px);
+}
+
+.certificate .certificate-quote {
+    position: absolute;
+    bottom: 7%;
+    left: 7%;
+    width: 40%;
+    margin: 0;
+    font-size: clamp(9px, 1vw, 12px);
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+@media print {
+    .certificate {
+        width: 297mm;
+        height: 210mm;
+        aspect-ratio: auto;
+        break-inside: avoid-page;
+        page-break-inside: avoid;
+    }
+
+    .certificate-content {
+        gap: 0.2mm;
+    }
+}

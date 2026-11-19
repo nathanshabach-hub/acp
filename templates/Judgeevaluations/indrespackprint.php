@@ -10,11 +10,16 @@ $this->Evaluationquestions = TableRegistry::getTableLocator()->get('Evaluationqu
 $this->Eventsubmissions = TableRegistry::getTableLocator()->get('Eventsubmissions');
 $evaluationsOnly = ((int)$this->request->getQuery('evaluations_only', 0) === 1);
 ?>
+<?php if (!$evaluationsOnly): ?>
+<link href="https://fonts.googleapis.com/css2?family=Pinyon+Script&display=swap" rel="stylesheet">
+<link href="<?= h(HTTP_PATH . '/css/front/certificate.css?v=' . hash_file('sha256', WWW_ROOT . 'css/front/certificate.css')) ?>" rel="stylesheet">
+<?php endif; ?>
 <?php if ((int)$this->request->getQuery('autoprint', 1) === 1): ?>
 <script type="text/javascript">
-<!--
-window.print();
-//-->
+window.addEventListener('load', async function () {
+	await document.fonts.ready;
+	window.print();
+});
 </script>
 <?php endif; ?>
 <style>

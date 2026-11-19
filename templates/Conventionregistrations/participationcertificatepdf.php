@@ -1,5 +1,6 @@
 <?php
-$headerImg 		= HTTP_PATH.'/img/front/certificates/participation_certificate/participation_certificate_header_new.png';
+$headerPath = 'img/front/certificates/participation_certificate/participation_certificate_header_new.png';
+$headerImg = HTTP_PATH . '/' . $headerPath . '?v=' . hash_file('sha256', WWW_ROOT . $headerPath);
 $footerImg 		= HTTP_PATH.'/img/front/certificates/participation_certificate/participation_certificate_footer_new.png';
 $signatureImg 	= HTTP_PATH.'/img/front/certificates/participation_certificate/participation_certificate_signature.png';
 ?>

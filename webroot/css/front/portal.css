@@ -229,6 +229,7 @@
     40%, 80% { transform: translateX(2px) rotate(2deg); }
 }
 .user-portal .btn-success { color: #fff !important; }
+.user-portal .cr-students-actions .btn-info { color: #fff !important; }
 .user-portal .btn-secondary { background: #e8eef2 !important; border: 1px solid #d8e2e9 !important; color: #324b5c !important; padding: 10px 16px !important; }
 .user-portal .btn-warning { color: #634a12 !important; }
 .user-portal .btn .fa { margin-left: 10px; }

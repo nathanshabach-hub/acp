@@ -51,6 +51,7 @@ final class ScopedPublicationCsrfMiddleware implements MiddlewareInterface
             return true;
         }
         if ($prefix === '' && $controller === 'conventionregistrations' && in_array($action, [
+            'evaluationdownloads', 'prepareevaluationdownload', 'completeevaluationdownload',
             'judgepricestructure', 'judgesregisterconvention', 'addstudent', 'students', 'unassignsupervisors', 'studentevents', 'managestudentevents', 'reviewstudentevents', 'editstudentevent', 'removestudentevent', 'addstudentevent',
         ], true)) {
             return true;

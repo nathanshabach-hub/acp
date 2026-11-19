@@ -4,6 +4,125 @@ No hosted server changes, releases, hosted migrations, cron activation, or Git
 commits are authorized by this implementation. Packaging below is a design,
 not a built release. Existing local credentials have not been changed or rotated.
 
+## Ten-student judge evaluation downloads
+
+The **Judges Evaluations** button on Student Registration opens a selection page
+for the school's currently selected, officially published convention registration.
+The first ten not-yet-downloaded students with evaluation forms are preselected.
+Schools can change the selection (one to ten students), select the next ten,
+or re-download completed students.
+
+Each download is one ZIP containing a named folder per student and one
+`evaluations.pdf` in each folder. It excludes certificates, result summaries and
+the results-package cover. Students without evaluation forms are shown but cannot
+be selected. A failed batch does not produce a partial ZIP or mark students complete.
+The separate **Download All Results** button retains its existing workflow.
+
+While a batch is running, a live preview lists each selected student's file as
+waiting, preparing or PDF ready. Updates come from actual PDF generation, followed
+by ZIP creation and the received ZIP byte count. Failed/interrupted generation or
+an incomplete ZIP transfer does not mark the batch complete. Preparation streams
+newline-delimited JSON; the completed ZIP uses the existing signed, school-scoped,
+single-use download endpoint. Deploy the controller, export service, selection
+template and JavaScript together when updating this progress protocol.
+
+Completion is stored in the database, shared across devices for this school and
+convention registration. It is recorded only after the browser receives the ZIP
+and starts its download. Browsers cannot confirm a successful disk save. If
+recording completion fails after receiving the ZIP, the page offers a retry
+without generating/downloading the same ZIP again. After confirmation the page
+reloads, shows completed students and preselects up to ten remaining students.
+This is download history, not automatic detection of subsequently revised marks.
+
+Deploy together:
+- `config/migrations/018_add_evaluation_download_batches.php`
+- `src/Service/EvaluationDownloads.php` and `EvaluationBatchExport.php`
+- `src/Controller/ConventionregistrationsController.php`
+- `src/Middleware/ScopedPublicationCsrfMiddleware.php`
+- `templates/Conventionregistrations/students.php` and `evaluationdownloads.php`
+- `templates/Judgeevaluations/indrespackprint.php`
+- Both `templates/element/Judgeevaluations/evaluationformpdf.php` and
+  `templates/Element/Judgeevaluations/evaluationformpdf.php`
+- Both `templates/layout/evaluation_export.php` and
+  `templates/Layout/evaluation_export.php`
+- `webroot/js/evaluation-downloads.js` and `webroot/sw.js`
+
+In cPanel Terminal, apply the idempotent migration using the hosted Demo configuration
+(adjust these paths if the installation or protected configuration is elsewhere):
+
+```sh
+cd /home/convention/public_html/acp_demo
+ACP_ENV=demo ACP_CONFIG_FILE=/home/convention/acp-private/demo.php php config/migrations/018_add_evaluation_download_batches.php
+```
+
+Back up the Demo database first. Do not omit the environment/configuration variables:
+CLI PHP otherwise defaults to the local configuration, which may target a different
+database than the website. Expected output: `Shared evaluation download tracking ready.`
+
+Migration 018 has been applied locally, not on the hosted site. It adds two InnoDB
+tracking tables without changing evaluation marks or student records. Without it,
+the new page shows an explicit migration warning rather than pretending progress
+was saved.
+
+The server needs PHP ZIP, enabled process execution, Chrome/Chromium and `timeout`
+on its PATH. Allow enough PHP/web-server request time for ten sequential PDF
+renders (the action allows 360 seconds; each renderer is limited to 30 seconds).
+PDFs render from private local HTML with local CSS/fonts, so the development
+server does not need a second HTTP worker. Temporary HTML, browser profiles,
+PDFs and ZIPs use the existing private export directory/locking and are removed
+after the ZIP download response body is prepared. Failed generation is cleaned
+immediately. Existing result-export cleanup handles prepared ZIPs that were never
+fetched and directories left by interrupted processes.
+
+The progress response disables application/PHP output buffers for that streamed
+response and sends `X-Accel-Buffering: no`. Hosted reverse proxies must also allow
+streaming without response buffering or compression that delays small chunks;
+otherwise updates may arrive together rather than live.
+
+Local regression checks:
+
+```sh
+php tests/manual/evaluation_downloads.php --export
+```
+
+The optional real-export check also requires `pdftotext`. It verifies limits,
+school/registration isolation, retry-safe shared completion, ten ZIP folders,
+actual PDF contents, evaluation-only output and accurate per-file progress
+callbacks. Completion fixtures are rolled back. Browser checks additionally
+covered incremental progress before generation finished, ZIP transfer, first-ten
+selection, confirmation retry and automatic next-ten selection. Test completion
+records were removed.
+
+## Place certificate artwork caching
+
+Deploy `templates/Conventionregistrations/placecertificatepdf.php` together with
+`webroot/img/front/certificates/participation_certificate/participation_certificate_header_new.png`.
+The header image URL includes its content hash so ordinary reloads use updated
+artwork instead of the service worker's older cached image. The certificate
+keeps its white background and borderless A4 landscape print layout.
+No database migration is required.
+
+The results package uses separate certificate elements. Deploy both
+`participationcertificatepdf.php` and `placecertificatepdf.php` from
+`templates/element/Judgeevaluations/` and `templates/Element/Judgeevaluations/`.
+Also deploy `templates/Conventionregistrations/participationcertificatepdf.php`
+for standalone participation certificates. These use the same content-hashed
+header URL; deploying only the standalone place template will not fix cached
+artwork inside results packages.
+
+For individual results packages, also deploy
+`templates/Judgeevaluations/indrespackprint.php`. It loads the same Pinyon Script
+font as the standalone place certificate and waits for fonts before automatic
+printing. Both views require access to Google Fonts to load that typeface.
+
+For matching certificate placement and spacing in results packages and standalone
+place certificates, deploy the templates above together with
+`webroot/css/front/certificate.css` and both copies of
+`Conventionregistrations/certificate.php` under `templates/element/` and
+`templates/Element/`. They share the same certificate markup and scoped styles.
+The screen preview uses A4 landscape proportions; printing uses 297mm by 210mm.
+Evaluation pages retain their existing styles and portrait evaluations-only mode.
+
 ## Standalone judge registration fees
 
 Deploy `src/Utility/LegacyEmail.php` with the judge registration workflow:

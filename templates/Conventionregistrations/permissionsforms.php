@@ -46,6 +46,51 @@
 					</div>
 				</div>
 			</div>
+
+			<section class="cr-permforms-upload">
+				<div>
+					<h2>Submit a Signed Permission Form</h2>
+					<p>Upload the completed and signed form as a PDF. The Events team will review it for this convention registration.</p>
+				</div>
+				<?php echo $this->Form->create(null, [
+					'type' => 'file',
+					'url' => ['controller' => 'conventionregistrations', 'action' => 'permissionsformsubmit'],
+				]); ?>
+					<div class="cr-permforms-upload-fields">
+						<?php echo $this->Form->select('form_type', [
+							'hssp_students' => 'HSSP Students Form',
+							'schools' => 'Schools Form',
+							'adult_registration' => 'Adult Registration Form',
+						], [
+							'empty' => 'Choose form type',
+							'class' => 'form-control',
+							'required' => true,
+							'label' => false,
+						]); ?>
+						<?php echo $this->Form->file('permission_form', [
+							'class' => 'form-control',
+							'accept' => 'application/pdf,.pdf',
+							'required' => true,
+						]); ?>
+						<?php echo $this->Form->button('<i class="fa fa-upload"></i> Submit Permission Form', [
+							'type' => 'submit',
+							'class' => 'btn btn-primary',
+							'escapeTitle' => false,
+						]); ?>
+					</div>
+				<?php echo $this->Form->end(); ?>
+
+				<?php if (!empty($permissionFormSubmissions)): ?>
+					<ul class="cr-permforms-history">
+						<?php foreach ($permissionFormSubmissions as $submission): ?>
+							<li>
+								<strong><?php echo h($submission['form_label'] ?? 'Permission Form'); ?></strong>
+								<span>Submitted <?php echo h(date('j M Y, g:i a', strtotime((string)$submission['submitted_at']))); ?></span>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+			</section>
 		</main>
 	</div>
 </div>
@@ -144,6 +189,53 @@ document.addEventListener('DOMContentLoaded', function () {
 	padding: 16px;
 }
 
+.cr-permforms-upload {
+	background: #fff;
+	border: 1px solid #d8e3ef;
+	border-radius: 16px;
+	box-shadow: 0 10px 24px rgba(19, 53, 90, 0.07);
+	margin-top: 16px;
+	padding: 18px;
+}
+
+.cr-permforms-upload h2 {
+	color: #17355a;
+	font-size: 20px;
+	font-weight: 700;
+	margin: 0 0 6px;
+}
+
+.cr-permforms-upload p {
+	color: #314f72;
+	margin: 0 0 14px;
+}
+
+.cr-permforms-upload-fields {
+	align-items: center;
+	display: grid;
+	gap: 10px;
+	grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.3fr) auto;
+}
+
+.cr-permforms-history {
+	border-top: 1px solid #d8e3ef;
+	list-style: none;
+	margin: 16px 0 0;
+	padding: 12px 0 0;
+}
+
+.cr-permforms-history li {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+	padding: 4px 0;
+}
+
+.cr-permforms-history span {
+	color: #60748d;
+	font-size: 12px;
+}
+
 .cr-permforms-card-head h2 {
 	color: #17355a;
 	font-size: 18px;
@@ -202,6 +294,10 @@ document.addEventListener('DOMContentLoaded', function () {
 	}
 
 	.cr-permforms-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.cr-permforms-upload-fields {
 		grid-template-columns: 1fr;
 	}
 }

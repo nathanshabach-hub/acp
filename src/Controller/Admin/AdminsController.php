@@ -238,6 +238,8 @@ class AdminsController extends AppController {
 
         $allSquad247Submissions = $this->loadSquad247Submissions();
         $this->set('total_squad247', count($allSquad247Submissions));
+        $permissionFormService = new \App\Service\PermissionFormSubmissions();
+        $this->set('total_permission_forms', count($permissionFormService->all()));
 		
         // Updated to use getSession()
         $sess_admin_header_season_id = $this->request->getSession()->read("sess_admin_header_season_id");
@@ -254,6 +256,7 @@ class AdminsController extends AppController {
             $this->set('conv_season_slug', $convSD->slug);
             $selectedConventionName = trim((string)($convSD->Conventions['name'] ?? ''));
             $this->set('total_squad247', $this->countSquad247SubmissionsForConvention($allSquad247Submissions, $selectedConventionName));
+            $this->set('total_permission_forms', count($permissionFormService->forSeason((int)$convSD->id)));
 			
             $total_students = $this->Conventionregistrationstudents->find()
                 ->select(['student_id'])
@@ -402,6 +405,48 @@ class AdminsController extends AppController {
             $totalStageProgramAutomation = $this->Schedulingtimings->find()->count();
             $this->set('total_stage_program_automation', $totalStageProgramAutomation);
         }
+    }
+
+    public function permissionforms() {
+        $this->set('title', ADMIN_TITLE . 'Permission Forms');
+        $this->viewBuilder()->setLayout('admin');
+        $this->set('dashboard', '1');
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+
+        $seasonId = (int)$this->request->getSession()->read('sess_admin_header_season_id');
+        if ($seasonId <= 0) {
+            $this->Flash->error('Please select a convention season first.');
+            return $this->redirect(['action' => 'dashboard']);
+        }
+
+        $season = $this->Conventionseasons->find()
+            ->where(['Conventionseasons.id' => $seasonId])
+            ->contain(['Conventions'])
+            ->first();
+        if (!$season) {
+            $this->Flash->error('Selected convention season was not found.');
+            return $this->redirect(['action' => 'dashboard']);
+        }
+
+        $this->set('convSD', $season);
+        $this->set('permissionFormSubmissions', (new \App\Service\PermissionFormSubmissions())->forSeason($seasonId));
+    }
+
+    public function downloadpermissionform(string $id) {
+        $this->request->allowMethod(['get']);
+        $this->setResponse($this->getResponse()->withHeader('Cache-Control', 'private, no-store, max-age=0'));
+        $seasonId = (int)$this->request->getSession()->read('sess_admin_header_season_id');
+        $service = new \App\Service\PermissionFormSubmissions();
+        $submission = $service->find($id);
+        if (!$submission || (int)($submission['conventionseason_id'] ?? 0) !== $seasonId) {
+            throw new \Cake\Http\Exception\NotFoundException('Permission form not found.');
+        }
+
+        return $this->getResponse()
+            ->withFile($service->filePath($submission), [
+                'download' => true,
+                'name' => (string)($submission['original_name'] ?? 'permission-form.pdf'),
+            ]);
     }
 
     public function totalcount() {

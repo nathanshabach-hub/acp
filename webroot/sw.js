@@ -57,6 +57,7 @@ const NEVER_CACHE = [
   /\/users\/students(?:\/|$)/,
   /\/users\/archivestudents(?:\/|$)/,
   /\/conventionregistrations\/students(?:\/|$)/,
+  /\/conventionregistrations\/(?:evaluationdownloads|prepareevaluationdownload|completeevaluationdownload)(?:\/|$)/,
   /\/conventionregistrations\/addstudent(?:\/|$)/,
   /\/conventionregistrations\/(?:studentevents|managestudentevents|reviewstudentevents|editstudentevent|packageregistration)(?:\/|$)/,
   /\/eventsubmissions\/submitstudentevent(?:\/|$)/,

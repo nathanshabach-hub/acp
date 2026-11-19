@@ -85,7 +85,9 @@
 			$checkGroup = $this->Crstudentevents->find()->where($condGrp)->select(['group_name'])->first();
 			
 			if (!empty($checkGroup->group_name)) {
-				$condJeval[] = "(Judgeevaluations.group_name = '".$checkGroup->group_name."' )";
+				$condJeval['Judgeevaluations.group_name'] = $checkGroup->group_name;
+			} else {
+				continue;
 			}
 		}
 		

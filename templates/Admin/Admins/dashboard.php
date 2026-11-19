@@ -237,13 +237,13 @@
             <div class="col-lg-3 col-xs-6">
                 <div class="small-box bg-teal">
                     <div class="inner">
-                        <h3>&mdash;</h3>
+                        <h3><?php echo isset($total_permission_forms) ? (int)$total_permission_forms : 0; ?></h3>
                         <p>Permission Forms</p>
                     </div>
                     <div class="icon">
                         <i class="fa fa-file-text-o"></i>
                     </div>
-                    <?php echo $this->Html->link('More info <i class="fa fa-arrow-circle-right"></i>', ['prefix' => false, 'controller' => 'conventionregistrations', 'action' => 'permissionsforms'], [ 'escape' => false, 'title' => 'Open Permission Forms', 'class' => 'small-box-footer']); ?>
+                    <?php echo $this->Html->link('More info <i class="fa fa-arrow-circle-right"></i>', ['controller' => 'admins', 'action' => 'permissionforms'], [ 'escape' => false, 'title' => 'Open Permission Form Submissions', 'class' => 'small-box-footer']); ?>
                 </div>
             </div>
 
